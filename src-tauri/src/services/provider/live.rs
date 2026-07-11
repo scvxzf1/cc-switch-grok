@@ -1728,27 +1728,10 @@ pub fn import_grok_providers_from_live(state: &AppState) -> Result<usize, AppErr
         }
 
         // Normalize live model table into provider settings_config.
+        // Phase-1: imported tables are treated as custom providers.
         if let Some(obj) = config.as_object_mut() {
             if !obj.contains_key("kind") {
-                // Prefer custom for tables that carry endpoint credentials.
-                let has_endpoint = obj
-                    .get("base_url")
-                    .and_then(|v| v.as_str())
-                    .map(|s| !s.trim().is_empty())
-                    .unwrap_or(false)
-                    || obj
-                        .get("api_key")
-                        .and_then(|v| v.as_str())
-                        .map(|s| !s.trim().is_empty())
-                        .unwrap_or(false);
-                obj.insert(
-                    "kind".into(),
-                    Value::String(if has_endpoint {
-                        "custom".into()
-                    } else {
-                        "custom".into()
-                    }),
-                );
+                obj.insert("kind".into(), Value::String("custom".into()));
             }
         }
 

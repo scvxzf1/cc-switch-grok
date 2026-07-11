@@ -284,6 +284,9 @@ pub struct McpRoot {
     /// Hermes MCP 配置（实际使用 config.yaml）
     #[serde(default, skip_serializing_if = "McpConfig::is_empty")]
     pub hermes: McpConfig,
+    /// Grok MCP placeholder (phase-1 disabled; kept separate to avoid Hermes pollution)
+    #[serde(default, skip_serializing_if = "McpConfig::is_empty")]
+    pub grok: McpConfig,
 }
 
 impl Default for McpRoot {
@@ -299,6 +302,7 @@ impl Default for McpRoot {
             opencode: McpConfig::default(),
             openclaw: McpConfig::default(),
             hermes: McpConfig::default(),
+            grok: McpConfig::default(),
         }
     }
 }
@@ -332,6 +336,8 @@ pub struct PromptRoot {
     pub openclaw: PromptConfig,
     #[serde(default)]
     pub hermes: PromptConfig,
+    #[serde(default)]
+    pub grok: PromptConfig,
 }
 
 use crate::config::{copy_file, get_app_config_dir, get_app_config_path, write_json_file};
@@ -676,7 +682,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &self.mcp.opencode,
             AppType::OpenClaw => &self.mcp.openclaw,
             AppType::Hermes => &self.mcp.hermes,
-            AppType::Grok => &self.mcp.hermes, // unused; Grok MCP disabled
+            AppType::Grok => &self.mcp.grok, // phase-1: MCP disabled, isolated storage
         }
     }
 
@@ -690,7 +696,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &mut self.mcp.opencode,
             AppType::OpenClaw => &mut self.mcp.openclaw,
             AppType::Hermes => &mut self.mcp.hermes,
-            AppType::Grok => &mut self.mcp.hermes, // unused; Grok MCP disabled
+            AppType::Grok => &mut self.mcp.grok, // phase-1: MCP disabled, isolated storage
         }
     }
 
@@ -730,6 +736,7 @@ impl MultiAppConfig {
             || !self.prompts.opencode.prompts.is_empty()
             || !self.prompts.openclaw.prompts.is_empty()
             || !self.prompts.hermes.prompts.is_empty()
+            || !self.prompts.grok.prompts.is_empty()
         {
             return Ok(false);
         }
@@ -817,7 +824,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &mut config.prompts.opencode.prompts,
             AppType::OpenClaw => &mut config.prompts.openclaw.prompts,
             AppType::Hermes => &mut config.prompts.hermes.prompts,
-            AppType::Grok => &mut config.prompts.hermes.prompts, // unused placeholder
+            AppType::Grok => &mut config.prompts.grok.prompts, // phase-1 isolated placeholder
         };
 
         prompts.insert(id, prompt);
