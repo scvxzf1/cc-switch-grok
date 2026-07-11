@@ -2987,5 +2987,43 @@
     "expiredHint": "请运行 {{tool}} 命令刷新登录",
     "queryFailed": "查询失败",
     "refresh": "刷新"
+  },
+  "grok": {
+    "form": {
+      "baseUrl": "API 端点",
+      "baseUrlHint": "自定义供应商的 API 端点。官方供应商无需填写。",
+      "baseUrlRequired": "API 端点不能为空",
+      "baseUrlInvalid": "请输入合法的 http(s) 地址",
+      "apiBackend": "API 协议",
+      "apiBackendHint": "选择上游兼容协议。多数 OpenAI 兼容代理使用 Chat Completions。",
+      "apiBackendChatCompletions": "OpenAI Chat Completions",
+      "apiBackendResponses": "OpenAI Responses",
+      "apiBackendMessages": "Anthropic Messages",
+      "defaultModel": "默认模型",
+      "advancedSectionHint": "包含本地路由、思考能力、思考等级与模型映射。",
+      "localRoute": "本地路由",
+      "localRouteHint": "开启后由本地代理转发请求，可用于协议转换与模型映射。",
+      "localRouteOfficialHint": "官方供应商固定直连，不能开启本地路由。",
+      "localRouteOfficialDisabled": "官方供应商不能开启本地路由",
+      "reasoningModeToggle": "支持思考模式",
+      "reasoningModeHint": "上游支持开启/关闭 thinking 时启用。",
+      "reasoningEffortToggle": "支持思考等级",
+      "reasoningEffortHint": "上游支持 low/high/max 等思考深度时启用。开启后会自动打开思考模式。",
+      "defaultReasoningEffort": "默认思考等级",
+      "modelMappingTitle": "模型映射",
+      "modelMappingHint": "配置显示名、本地模型 ID、上游模型与上下文窗口。至少保留一行。",
+      "modelMappingsRequired": "至少配置一个模型映射",
+      "addModel": "添加模型",
+      "removeModel": "删除模型",
+      "noModels": "暂无模型映射，请至少添加一个模型。",
+      "displayName": "显示名",
+      "modelId": "模型 ID",
+      "upstreamModel": "上游模型",
+      "contextWindow": "上下文窗口",
+      "isDefault": "设为默认",
+      "providerKey": "供应商标识",
+      "providerKeyInvalid": "供应商标识只能包含小写字母、数字和连字符",
+      "providerKeyDuplicate": "该供应商标识已存在"
+    }
   }
 }

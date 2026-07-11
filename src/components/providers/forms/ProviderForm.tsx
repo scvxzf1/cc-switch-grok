@@ -50,10 +50,14 @@ import {
   hermesProviderPresets,
   type HermesProviderPreset,
 } from "@/config/hermesProviderPresets"
-import { grokProviderPresets } from "@/config/grokProviderPresets";
+import {
+  grokProviderPresets,
+  type GrokProviderPreset,
+} from "@/config/grokProviderPresets";
 import { OpenCodeFormFields } from "./OpenCodeFormFields";
 import { OpenClawFormFields } from "./OpenClawFormFields";
 import { HermesFormFields } from "./HermesFormFields";
+import { GrokFormFields } from "./GrokFormFields";
 import type { UniversalProviderPreset } from "@/config/universalProviderPresets";
 import {
   applyTemplateValues,
@@ -104,6 +108,7 @@ import {
   useOmoDraftState,
   useOpenclawFormState,
   useHermesFormState,
+  useGrokFormState,
   useCopilotAuth,
   useCodexOauth,
 } from "./hooks";
@@ -118,6 +123,9 @@ import {
   normalizePricingSource,
 } from "./helpers/opencodeFormUtils";
 import { HERMES_DEFAULT_CONFIG } from "./hooks/useHermesFormState";
+import {
+  GROK_DEFAULT_CONFIG,
+} from "./hooks/useGrokFormState";
 import { resolveManagedAccountId } from "@/lib/authBinding";
 import { useOpenClawLiveProviderIds } from "@/hooks/useOpenClaw";
 import { useHermesLiveProviderIds } from "@/hooks/useHermes";
@@ -130,7 +138,8 @@ type PresetEntry = {
     | GeminiProviderPreset
     | OpenCodeProviderPreset
     | OpenClawProviderPreset
-    | HermesProviderPreset;
+    | HermesProviderPreset
+    | GrokProviderPreset;
 };
 
 export const normalizeCodexCatalogModelsForSave = (
@@ -393,16 +402,7 @@ function ProviderFormFull({
                 : appId === "hermes"
                   ? HERMES_DEFAULT_CONFIG
                   : appId === "grok"
-                    ? JSON.stringify(
-                        {
-                          kind: "official",
-                          model: "grok-build",
-                          name: "Grok Build",
-                          useLocalRoute: false,
-                        },
-                        null,
-                        2,
-                      )
+                    ? GROK_DEFAULT_CONFIG
                     : CLAUDE_DEFAULT_CONFIG,
       icon: initialData?.icon ?? "",
       iconColor: initialData?.iconColor ?? "",
@@ -905,6 +905,13 @@ function ProviderFormFull({
     onSettingsConfigChange: (config) => form.setValue("settingsConfig", config),
     getSettingsConfig: () => form.getValues("settingsConfig"),
   });
+  const grokForm = useGrokFormState({
+    initialData,
+    appId,
+    providerId,
+    onSettingsConfigChange: (config) => form.setValue("settingsConfig", config),
+    getSettingsConfig: () => form.getValues("settingsConfig"),
+  });
   const {
     data: hermesLiveProviderIds = [],
     isLoading: isHermesLiveProviderIdsLoading,
@@ -1146,6 +1153,32 @@ function ProviderFormFull({
       }
     }
 
+    if (appId === "grok") {
+      // providerKey: optional-ish for additive style; require format if provided
+      if (grokForm.grokProviderKey.trim()) {
+        if (!keyPattern.test(grokForm.grokProviderKey)) {
+          toast.error(t("grok.form.providerKeyInvalid"));
+          return;
+        }
+        if (
+          !isEditMode &&
+          grokForm.existingGrokKeys.includes(grokForm.grokProviderKey)
+        ) {
+          toast.error(t("grok.form.providerKeyDuplicate"));
+          return;
+        }
+      }
+      const validated = grokForm.buildValidatedConfig();
+      if (!validated.ok) {
+        toast.error(
+          t(validated.errorKey, {
+            defaultValue: validated.errorKey,
+          }),
+        );
+        return;
+      }
+    }
+
     // OAuth 未登录：B 类（token 根本不存在，保存了也没法建立）
     const isCopilotProvider =
       templatePreset?.providerType === "github_copilot" ||
@@ -1244,6 +1277,21 @@ function ProviderFormFull({
           );
         }
         if (!geminiApiKey.trim()) {
+          issues.push(
+            t("providerForm.apiKeyRequired", {
+              defaultValue: "非官方供应商请填写 API Key",
+            }),
+          );
+        }
+      } else if (appId === "grok") {
+        if (!grokForm.grokBaseUrl.trim()) {
+          issues.push(
+            t("providerForm.endpointRequired", {
+              defaultValue: "非官方供应商请填写 API 端点",
+            }),
+          );
+        }
+        if (!grokForm.grokApiKey.trim()) {
           issues.push(
             t("providerForm.apiKeyRequired", {
               defaultValue: "非官方供应商请填写 API Key",
@@ -1361,6 +1409,17 @@ function ProviderFormFull({
         }
       }
       settingsConfig = JSON.stringify(omoConfig);
+    } else if (appId === "grok") {
+      const validated = grokForm.buildValidatedConfig();
+      if (!validated.ok) {
+        toast.error(
+          t(validated.errorKey, {
+            defaultValue: validated.errorKey,
+          }),
+        );
+        return;
+      }
+      settingsConfig = JSON.stringify(validated.config, null, 2);
     } else {
       settingsConfig = values.settingsConfig.trim();
     }
@@ -1385,6 +1444,8 @@ function ProviderFormFull({
       payload.providerKey = openclawForm.openclawProviderKey;
     } else if (appId === "hermes") {
       payload.providerKey = hermesForm.hermesProviderKey;
+    } else if (appId === "grok" && grokForm.grokProviderKey.trim()) {
+      payload.providerKey = grokForm.grokProviderKey;
     }
 
     if (isAnyOmoCategory && !payload.presetCategory) {
@@ -1646,6 +1707,19 @@ function ProviderFormFull({
     formWebsiteUrl: form.watch("websiteUrl") || "",
   });
 
+  const {
+    shouldShowApiKeyLink: shouldShowGrokApiKeyLink,
+    websiteUrl: grokWebsiteUrl,
+    isPartner: isGrokPartner,
+    partnerPromotionKey: grokPartnerPromotionKey,
+  } = useApiKeyLink({
+    appId: "grok",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
   // 使用端点测速候选 hook
   const speedTestEndpoints = useSpeedTestEndpoints({
     appId,
@@ -1684,6 +1758,9 @@ function ProviderFormFull({
       }
       if (appId === "hermes") {
         hermesForm.resetHermesState();
+      }
+      if (appId === "grok") {
+        grokForm.resetGrokState();
       }
       return;
     }
@@ -1801,6 +1878,23 @@ function ProviderFormFull({
       const config = preset.settingsConfig;
 
       hermesForm.resetHermesState(config);
+
+      form.reset({
+        name: preset.nameKey ? t(preset.nameKey) : preset.name,
+        websiteUrl: preset.websiteUrl ?? "",
+        settingsConfig: JSON.stringify(config, null, 2),
+        icon: preset.icon ?? "",
+        iconColor: preset.iconColor ?? "",
+      });
+      return;
+    }
+
+    // Grok preset handling
+    if (appId === "grok") {
+      const preset = entry.preset as GrokProviderPreset;
+      const config = preset.settingsConfig;
+
+      grokForm.resetGrokState(config);
 
       form.reset({
         name: preset.nameKey ? t(preset.nameKey) : preset.name,
@@ -2324,6 +2418,35 @@ function ProviderFormFull({
             />
           )}
 
+          {/* Grok 专属字段 */}
+          {appId === "grok" && (
+            <GrokFormFields
+              baseUrl={grokForm.grokBaseUrl}
+              onBaseUrlChange={grokForm.handleGrokBaseUrlChange}
+              apiKey={grokForm.grokApiKey}
+              onApiKeyChange={grokForm.handleGrokApiKeyChange}
+              apiBackend={grokForm.grokApiBackend}
+              onApiBackendChange={grokForm.handleGrokApiBackendChange}
+              model={grokForm.grokModel}
+              onModelChange={grokForm.handleGrokModelChange}
+              useLocalRoute={grokForm.grokUseLocalRoute}
+              onUseLocalRouteChange={grokForm.handleGrokUseLocalRouteChange}
+              grokChatReasoning={grokForm.grokChatReasoning}
+              onGrokChatReasoningChange={grokForm.handleGrokChatReasoningChange}
+              defaultReasoningEffort={grokForm.grokDefaultReasoningEffort}
+              onDefaultReasoningEffortChange={
+                grokForm.handleGrokDefaultReasoningEffortChange
+              }
+              modelMappings={grokForm.grokModelMappings}
+              onModelMappingsChange={grokForm.handleGrokModelMappingsChange}
+              category={category}
+              shouldShowApiKeyLink={shouldShowGrokApiKeyLink}
+              websiteUrl={grokWebsiteUrl}
+              isPartner={isGrokPartner}
+              partnerPromotionKey={grokPartnerPromotionKey}
+            />
+          )}
+
           {/* 配置编辑器：Codex、Claude、Gemini 分别使用不同的编辑器 */}
           {appId === "codex" ? (
             <>
@@ -2412,7 +2535,7 @@ function ProviderFormFull({
               </div>
               {settingsConfigErrorField}
             </>
-          ) : appId === "openclaw" || appId === "hermes" ? (
+          ) : appId === "openclaw" || appId === "hermes" || appId === "grok" ? (
             <>
               <div className="space-y-2">
                 <Label htmlFor="settingsConfig">
@@ -2428,7 +2551,17 @@ function ProviderFormFull({
   "base_url": "https://api.example.com/v1",
   "api_key": ""
 }`
-                      : `{
+                      : appId === "grok"
+                        ? `{
+  "kind": "custom",
+  "model": "custom",
+  "base_url": "https://api.example.com/v1",
+  "api_key": "",
+  "api_backend": "chat_completions",
+  "useLocalRoute": false,
+  "modelMappings": []
+}`
+                        : `{
   "baseUrl": "https://api.example.com/v1",
   "apiKey": "your-api-key-here",
   "api": "openai-completions",

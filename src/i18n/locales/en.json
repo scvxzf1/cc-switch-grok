@@ -2987,5 +2987,43 @@
     "expiredHint": "Run the {{tool}} command to refresh your login",
     "queryFailed": "Query failed",
     "refresh": "Refresh"
+  },
+  "grok": {
+    "form": {
+      "baseUrl": "API Endpoint",
+      "baseUrlHint": "API endpoint for custom providers. Official providers do not need this.",
+      "baseUrlRequired": "API endpoint is required",
+      "baseUrlInvalid": "Enter a valid http(s) URL",
+      "apiBackend": "API Protocol",
+      "apiBackendHint": "Choose the upstream protocol. Most OpenAI-compatible proxies use Chat Completions.",
+      "apiBackendChatCompletions": "OpenAI Chat Completions",
+      "apiBackendResponses": "OpenAI Responses",
+      "apiBackendMessages": "Anthropic Messages",
+      "defaultModel": "Default model",
+      "advancedSectionHint": "Includes local routing, thinking support, effort levels, and model mappings.",
+      "localRoute": "Local route",
+      "localRouteHint": "When enabled, local proxy forwards requests for protocol conversion and model mapping.",
+      "localRouteOfficialHint": "Official providers always use direct connection; local route cannot be enabled.",
+      "localRouteOfficialDisabled": "Official providers cannot enable local route",
+      "reasoningModeToggle": "Support thinking mode",
+      "reasoningModeHint": "Enable when the upstream API can toggle thinking.",
+      "reasoningEffortToggle": "Support reasoning effort",
+      "reasoningEffortHint": "Enable when the upstream supports effort levels like low/high/max. Enabling also turns on thinking mode.",
+      "defaultReasoningEffort": "Default reasoning effort",
+      "modelMappingTitle": "Model mapping",
+      "modelMappingHint": "Configure display name, local model ID, upstream model, and context window. Keep at least one row.",
+      "modelMappingsRequired": "At least one model mapping is required",
+      "addModel": "Add model",
+      "removeModel": "Remove model",
+      "noModels": "No model mappings yet. Add at least one model.",
+      "displayName": "Display name",
+      "modelId": "Model ID",
+      "upstreamModel": "Upstream model",
+      "contextWindow": "Context window",
+      "isDefault": "Set as default",
+      "providerKey": "Provider key",
+      "providerKeyInvalid": "Provider key can only contain lowercase letters, numbers, and hyphens",
+      "providerKeyDuplicate": "This provider key already exists"
+    }
   }
 }

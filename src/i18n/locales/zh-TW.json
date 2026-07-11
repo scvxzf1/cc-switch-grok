@@ -2959,5 +2959,43 @@
     "expiredHint": "請執行 {{tool}} 命令重新整理登入",
     "queryFailed": "查詢失敗",
     "refresh": "重新整理"
+  },
+  "grok": {
+    "form": {
+      "baseUrl": "API 端點",
+      "baseUrlHint": "自訂供應商的 API 端點。官方供應商無需填寫。",
+      "baseUrlRequired": "API 端點不能為空",
+      "baseUrlInvalid": "請輸入合法的 http(s) 地址",
+      "apiBackend": "API 協議",
+      "apiBackendHint": "選擇上游相容協議。多數 OpenAI 相容代理使用 Chat Completions。",
+      "apiBackendChatCompletions": "OpenAI Chat Completions",
+      "apiBackendResponses": "OpenAI Responses",
+      "apiBackendMessages": "Anthropic Messages",
+      "defaultModel": "預設模型",
+      "advancedSectionHint": "包含本機路由、思考能力、思考等級與模型映射。",
+      "localRoute": "本機路由",
+      "localRouteHint": "開啟後由本機代理轉發請求，可用於協議轉換與模型映射。",
+      "localRouteOfficialHint": "官方供應商固定直連，不能開啟本機路由。",
+      "localRouteOfficialDisabled": "官方供應商不能開啟本機路由",
+      "reasoningModeToggle": "支援思考模式",
+      "reasoningModeHint": "上游支援開啟/關閉 thinking 時啟用。",
+      "reasoningEffortToggle": "支援思考等級",
+      "reasoningEffortHint": "上游支援 low/high/max 等思考深度時啟用。開啟後會自動打開思考模式。",
+      "defaultReasoningEffort": "預設思考等級",
+      "modelMappingTitle": "模型映射",
+      "modelMappingHint": "設定顯示名、本機模型 ID、上游模型與上下文窗口。至少保留一行。",
+      "modelMappingsRequired": "至少設定一個模型映射",
+      "addModel": "新增模型",
+      "removeModel": "刪除模型",
+      "noModels": "暫無模型映射，請至少新增一個模型。",
+      "displayName": "顯示名",
+      "modelId": "模型 ID",
+      "upstreamModel": "上游模型",
+      "contextWindow": "上下文窗口",
+      "isDefault": "設為預設",
+      "providerKey": "供應商標識",
+      "providerKeyInvalid": "供應商標識只能包含小寫字母、數字和連字符",
+      "providerKeyDuplicate": "該供應商標識已存在"
+    }
   }
 }

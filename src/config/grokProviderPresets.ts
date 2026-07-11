@@ -48,6 +48,7 @@ export interface GrokProviderPreset {
   settingsConfig: GrokProviderSettingsConfig;
   isOfficial?: boolean;
   isPartner?: boolean;
+  partnerPromotionKey?: string;
   category?: ProviderCategory;
   templateValues?: Record<string, TemplateValueConfig>;
   theme?: PresetTheme;

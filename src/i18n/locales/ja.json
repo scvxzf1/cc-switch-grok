@@ -2987,5 +2987,43 @@
     "expiredHint": "{{tool}}コマンドを実行してログインを更新してください",
     "queryFailed": "クエリに失敗しました",
     "refresh": "更新"
+  },
+  "grok": {
+    "form": {
+      "baseUrl": "API エンドポイント",
+      "baseUrlHint": "カスタムプロバイダーの API エンドポイント。公式プロバイダーでは不要です。",
+      "baseUrlRequired": "API エンドポイントは必須です",
+      "baseUrlInvalid": "有効な http(s) URL を入力してください",
+      "apiBackend": "API プロトコル",
+      "apiBackendHint": "上流プロトコルを選択します。多くの OpenAI 互換プロキシは Chat Completions を使います。",
+      "apiBackendChatCompletions": "OpenAI Chat Completions",
+      "apiBackendResponses": "OpenAI Responses",
+      "apiBackendMessages": "Anthropic Messages",
+      "defaultModel": "デフォルトモデル",
+      "advancedSectionHint": "ローカルルーティング、思考対応、思考レベル、モデルマッピングを含みます。",
+      "localRoute": "ローカルルート",
+      "localRouteHint": "有効にすると、ローカルプロキシがプロトコル変換とモデルマッピングのためにリクエストを転送します。",
+      "localRouteOfficialHint": "公式プロバイダーは常に直結のため、ローカルルートは有効にできません。",
+      "localRouteOfficialDisabled": "公式プロバイダーではローカルルートを有効にできません",
+      "reasoningModeToggle": "思考モードをサポート",
+      "reasoningModeHint": "上流 API が thinking のオン/オフに対応している場合に有効にします。",
+      "reasoningEffortToggle": "思考レベルをサポート",
+      "reasoningEffortHint": "上流が low/high/max などの思考深度に対応している場合に有効にします。有効化すると思考モードも自動でオンになります。",
+      "defaultReasoningEffort": "デフォルト思考レベル",
+      "modelMappingTitle": "モデルマッピング",
+      "modelMappingHint": "表示名、ローカルモデル ID、上流モデル、コンテキストウィンドウを設定します。少なくとも 1 行は残してください。",
+      "modelMappingsRequired": "モデルマッピングを少なくとも 1 件設定してください",
+      "addModel": "モデルを追加",
+      "removeModel": "モデルを削除",
+      "noModels": "モデルマッピングがありません。少なくとも 1 件追加してください。",
+      "displayName": "表示名",
+      "modelId": "モデル ID",
+      "upstreamModel": "上流モデル",
+      "contextWindow": "コンテキストウィンドウ",
+      "isDefault": "デフォルトに設定",
+      "providerKey": "プロバイダーキー",
+      "providerKeyInvalid": "プロバイダーキーは小文字・数字・ハイフンのみ使用できます",
+      "providerKeyDuplicate": "このプロバイダーキーは既に存在します"
+    }
   }
 }
