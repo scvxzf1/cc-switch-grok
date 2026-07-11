@@ -202,6 +202,7 @@ impl StreamCheckService {
             }
             AppType::OpenClaw => Self::extract_openclaw_base_url(provider),
             AppType::Hermes => Self::extract_hermes_base_url(provider),
+            AppType::Grok => Self::extract_grok_base_url(provider),
             AppType::ClaudeDesktop => ClaudeAdapter::new()
                 .extract_base_url(provider)
                 .map_err(|e| AppError::Message(format!("Failed to extract base_url: {e}"))),
@@ -343,6 +344,20 @@ impl StreamCheckService {
                 )
             })
     }
+
+    fn extract_grok_base_url(provider: &Provider) -> Result<String, AppError> {
+        let settings = &provider.settings_config;
+        let url = settings
+            .get("base_url")
+            .or_else(|| settings.get("baseUrl"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| AppError::Message("Grok provider missing base_url".into()))?;
+        Ok(url.trim_end_matches('/').to_string())
+    }
+
+    
 
     /// OpenCode: `{ npm, options: { baseURL, apiKey }, ... }`
     ///

@@ -169,6 +169,11 @@ impl Provider {
                 str_at(settings.get("base_url")),
                 str_at(settings.get("api_key")),
             ),
+            // Grok (config.toml model tables) flattens credentials at the top level, snake_case.
+            AppType::Grok => (
+                str_at(settings.get("base_url").or_else(|| settings.get("baseUrl"))),
+                str_at(settings.get("api_key").or_else(|| settings.get("apiKey"))),
+            ),
             // OpenClaw (openclaw.json) flattens credentials at the top level, camelCase.
             AppType::OpenClaw => (
                 str_at(settings.get("baseUrl")),

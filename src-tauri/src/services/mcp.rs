@@ -137,6 +137,9 @@ impl McpService {
             AppType::Hermes => {
                 mcp::sync_single_server_to_hermes(&Default::default(), &server.id, &server.server)?;
             }
+            AppType::Grok => {
+                log::debug!("Grok phase-1 does not support MCP sync, skipping");
+            }
         }
         Ok(())
     }
@@ -171,6 +174,9 @@ impl McpService {
             }
             AppType::Hermes => {
                 mcp::remove_server_from_hermes(id)?;
+            }
+            AppType::Grok => {
+                log::debug!("Grok phase-1 does not support MCP remove, skipping");
             }
         }
         Ok(())
@@ -216,7 +222,7 @@ impl McpService {
         servers: &IndexMap<String, McpServer>,
         app: &AppType,
     ) -> Result<(), AppError> {
-        if matches!(app, AppType::OpenClaw | AppType::ClaudeDesktop) {
+        if matches!(app, AppType::OpenClaw | AppType::ClaudeDesktop | AppType::Grok) {
             return Ok(());
         }
 

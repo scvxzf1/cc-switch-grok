@@ -22,8 +22,8 @@ use crate::store::AppState;
 
 // Re-export sub-module functions for external access
 pub use live::{
-    import_default_config, import_hermes_providers_from_live, import_openclaw_providers_from_live,
-    import_opencode_providers_from_live, read_live_settings,
+    import_default_config, import_grok_providers_from_live, import_hermes_providers_from_live,
+    import_openclaw_providers_from_live, import_opencode_providers_from_live, read_live_settings,
     should_import_default_config_on_startup, sync_current_to_live,
     update_toml_common_config_snippet,
 };
@@ -38,8 +38,8 @@ pub(crate) use live::{
 
 // Internal re-exports
 use live::{
-    remove_hermes_provider_from_live, remove_openclaw_provider_from_live,
-    remove_opencode_provider_from_live, write_gemini_live,
+    remove_grok_provider_from_live, remove_hermes_provider_from_live,
+    remove_openclaw_provider_from_live, remove_opencode_provider_from_live, write_gemini_live,
 };
 use usage::validate_usage_script;
 
@@ -338,6 +338,29 @@ mod tests {
                         "name": "GPT-4o"
                     }
                 }
+            }),
+            website_url: None,
+            category: Some("custom".to_string()),
+            created_at: Some(1),
+            sort_index: Some(0),
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        }
+    }
+
+    fn grok_provider(id: &str) -> Provider {
+        Provider {
+            id: id.to_string(),
+            name: format!("Provider {id}"),
+            settings_config: json!({
+                "kind": "custom",
+                "model": "gpt-proxy",
+                "base_url": "https://api.example.com/v1",
+                "api_key": "test-key",
+                "name": format!("Provider {id}")
             }),
             website_url: None,
             category: Some("custom".to_string()),
@@ -1591,6 +1614,44 @@ command = "legacy-cmd"
 
     #[test]
     #[serial]
+    fn import_grok_providers_from_live_updates_existing_provider_from_live() {
+        with_test_home(|state, _| {
+            let provider = grok_provider("existing-grok");
+            state
+                .db
+                .save_provider(AppType::Grok.as_str(), &provider)
+                .expect("seed existing grok provider");
+
+            let mut live_settings = provider.settings_config.clone();
+            live_settings["base_url"] = Value::String("https://api.grok.example/v1".to_string());
+            live_settings["name"] = Value::String("Provider existing-grok Updated".to_string());
+            crate::grok_config::set_model(&provider.id, live_settings)
+                .expect("seed edited live grok model");
+
+            let updated = import_grok_providers_from_live(state)
+                .expect("import grok providers from live");
+            assert_eq!(updated, 1);
+
+            let saved = state
+                .db
+                .get_provider_by_id(&provider.id, AppType::Grok.as_str())
+                .expect("query updated grok provider")
+                .expect("grok provider should exist");
+            assert_eq!(saved.name, provider.name);
+            assert_eq!(
+                saved.settings_config["base_url"],
+                json!("https://api.grok.example/v1")
+            );
+            assert_eq!(
+                saved.settings_config["name"],
+                json!("Provider existing-grok Updated")
+            );
+            assert_eq!(saved.settings_config["kind"], json!("custom"));
+        });
+    }
+
+    #[test]
+    #[serial]
     fn legacy_additive_provider_still_errors_on_live_config_parse_failure() {
         with_test_home(|state, home| {
             let provider = openclaw_provider("legacy-provider");
@@ -2249,6 +2310,7 @@ impl ProviderService {
                     AppType::OpenCode => remove_opencode_provider_from_live(id)?,
                     AppType::OpenClaw => remove_openclaw_provider_from_live(id)?,
                     AppType::Hermes => remove_hermes_provider_from_live(id)?,
+                    AppType::Grok => remove_grok_provider_from_live(id)?,
                     _ => {}
                 }
             }
@@ -2313,6 +2375,9 @@ impl ProviderService {
             }
             AppType::Hermes => {
                 remove_hermes_provider_from_live(id)?;
+            }
+            AppType::Grok => {
+                remove_grok_provider_from_live(id)?;
             }
             _ => {
                 return Err(AppError::Message(format!(
@@ -2535,6 +2600,21 @@ impl ProviderService {
             }
         }
 
+        // Grok is additive; switching updates [models].default (+ optional model table).
+        if matches!(app_type, AppType::Grok) {
+            if let Err(e) =
+                crate::grok_config::apply_switch_defaults(&provider.id, &provider.settings_config)
+            {
+                log::warn!(
+                    "Failed to update Grok model defaults after switching to '{}': {e}",
+                    provider.id
+                );
+                result
+                    .warnings
+                    .push(format!("grok_model_defaults_failed:{}", provider.id));
+            }
+        }
+
         // For additive-mode providers that were DB-only (live_config_managed == Some(false)),
         // flip the flag to true now that the provider has been successfully written to the live
         // file. This ensures sync_all_providers_to_live() will include it on future syncs.
@@ -2550,6 +2630,7 @@ impl ProviderService {
                     AppType::OpenCode => remove_opencode_provider_from_live(&provider.id),
                     AppType::OpenClaw => remove_openclaw_provider_from_live(&provider.id),
                     AppType::Hermes => remove_hermes_provider_from_live(&provider.id),
+                    AppType::Grok => remove_grok_provider_from_live(&provider.id),
                     _ => Ok(()),
                 };
 
@@ -2835,6 +2916,7 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(&provider.settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(&provider.settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
+            AppType::Grok => Ok(String::new()), // Grok doesn't use common config snippets
         }
     }
 
@@ -2851,6 +2933,7 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
+            AppType::Grok => Ok(String::new()), // Grok doesn't use common config snippets
         }
     }
 
@@ -3345,6 +3428,15 @@ impl ProviderService {
                     ));
                 }
             }
+            AppType::Grok => {
+                if !provider.settings_config.is_object() {
+                    return Err(AppError::localized(
+                        "provider.grok.settings.not_object",
+                        "Grok 配置必须是 JSON 对象",
+                        "Grok configuration must be a JSON object",
+                    ));
+                }
+            }
         }
 
         // Validate and clean UsageScript configuration (common for all app types)
@@ -3532,6 +3624,7 @@ impl ProviderService {
                 let api_key = provider
                     .settings_config
                     .get("apiKey")
+                    .or_else(|| provider.settings_config.get("api_key"))
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| {
                         AppError::localized(
@@ -3545,6 +3638,32 @@ impl ProviderService {
                 let base_url = provider
                     .settings_config
                     .get("baseUrl")
+                    .or_else(|| provider.settings_config.get("base_url"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                Ok((api_key, base_url))
+            }
+            AppType::Grok => {
+                let api_key = provider
+                    .settings_config
+                    .get("api_key")
+                    .or_else(|| provider.settings_config.get("apiKey"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        AppError::localized(
+                            "provider.grok.api_key.missing",
+                            "缺少 API Key",
+                            "API key is missing",
+                        )
+                    })?
+                    .to_string();
+
+                let base_url = provider
+                    .settings_config
+                    .get("base_url")
+                    .or_else(|| provider.settings_config.get("baseUrl"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();

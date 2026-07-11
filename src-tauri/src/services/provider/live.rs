@@ -44,6 +44,8 @@ pub(crate) fn provider_exists_in_live_config(
             .map(|providers| providers.contains_key(provider_id)),
         AppType::Hermes => crate::hermes_config::get_providers()
             .map(|providers| providers.contains_key(provider_id)),
+        AppType::Grok => crate::grok_config::get_models()
+            .map(|models| models.contains_key(provider_id)),
         _ => Ok(false),
     }
 }
@@ -381,7 +383,7 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
             }
             _ => false,
         },
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => false,
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Grok | AppType::ClaudeDesktop => false,
     }
 }
 
@@ -451,7 +453,7 @@ pub(crate) fn remove_common_config_from_settings(
             }
             Ok(result)
         }
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => {
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Grok | AppType::ClaudeDesktop => {
             Ok(settings.clone())
         }
     }
@@ -508,7 +510,7 @@ fn apply_common_config_to_settings(
             }
             Ok(result)
         }
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => {
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Grok | AppType::ClaudeDesktop => {
             Ok(settings.clone())
         }
     }
@@ -925,6 +927,10 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             crate::hermes_config::set_provider(&provider.id, provider.settings_config.clone())?;
             log::debug!("Hermes provider '{}' written to live config", provider.id);
         }
+        AppType::Grok => {
+            crate::grok_config::set_model(&provider.id, provider.settings_config.clone())?;
+            log::debug!("Grok provider '{}' written to live config", provider.id);
+        }
     }
     Ok(())
 }
@@ -1179,6 +1185,18 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             let config = crate::hermes_config::yaml_to_json(&yaml_config)?;
             Ok(config)
         }
+        AppType::Grok => {
+            let config_path = crate::grok_config::get_grok_config_path();
+            if !config_path.exists() {
+                return Err(AppError::localized(
+                    "grok.config.missing",
+                    "Grok 配置文件不存在",
+                    "Grok configuration file not found",
+                ));
+            }
+            let models = crate::grok_config::get_models()?;
+            Ok(Value::Object(models))
+        }
     }
 }
 
@@ -1273,7 +1291,7 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
             })
         }
         // OpenCode, OpenClaw and Hermes use additive mode and are handled by early return above
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Grok => {
             unreachable!("additive mode apps are handled by early return")
         }
     };
@@ -1683,6 +1701,111 @@ pub fn remove_hermes_provider_from_live(provider_id: &str) -> Result<(), AppErro
 
     hermes_config::remove_provider(provider_id)?;
     log::info!("Hermes provider '{provider_id}' removed from live config");
+
+    Ok(())
+}
+
+/// Import all model tables from Grok live config to database.
+///
+/// Grok uses additive mode — each `[model.<id>]` becomes a provider entry.
+/// Official builtin models without a custom table may yield import 0.
+pub fn import_grok_providers_from_live(state: &AppState) -> Result<usize, AppError> {
+    use crate::grok_config;
+
+    let models = grok_config::get_models()?;
+    if models.is_empty() {
+        return Ok(0);
+    }
+
+    let mut imported = 0;
+    let mut updated = 0;
+    let existing_ids = state.db.get_provider_ids("grok")?;
+
+    for (name, mut config) in models {
+        if name.trim().is_empty() {
+            log::warn!("Skipping Grok model with empty name");
+            continue;
+        }
+
+        // Normalize live model table into provider settings_config.
+        if let Some(obj) = config.as_object_mut() {
+            if !obj.contains_key("kind") {
+                // Prefer custom for tables that carry endpoint credentials.
+                let has_endpoint = obj
+                    .get("base_url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false)
+                    || obj
+                        .get("api_key")
+                        .and_then(|v| v.as_str())
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false);
+                obj.insert(
+                    "kind".into(),
+                    Value::String(if has_endpoint {
+                        "custom".into()
+                    } else {
+                        "custom".into()
+                    }),
+                );
+            }
+        }
+
+        if existing_ids.contains(&name) {
+            match state.db.get_provider_by_id(&name, "grok") {
+                Ok(Some(existing)) => {
+                    if existing.settings_config != config {
+                        let mut provider = existing;
+                        provider.settings_config = config;
+                        if let Err(e) = state.db.save_provider("grok", &provider) {
+                            log::warn!(
+                                "Failed to update Grok provider '{name}' from live config: {e}"
+                            );
+                        } else {
+                            updated += 1;
+                            log::info!("Updated Grok provider '{name}' from live config");
+                        }
+                    }
+                }
+                Ok(None) => {
+                    log::warn!("Grok provider '{name}' disappeared while importing live config")
+                }
+                Err(e) => log::warn!("Failed to look up Grok provider '{name}': {e}"),
+            }
+            continue;
+        }
+
+        let mut provider = Provider::with_id(name.clone(), name.clone(), config, None);
+        provider.category = Some("custom".to_string());
+        provider.meta = Some(crate::provider::ProviderMeta {
+            live_config_managed: Some(true),
+            ..Default::default()
+        });
+
+        if let Err(e) = state.db.save_provider("grok", &provider) {
+            log::warn!("Failed to import Grok provider '{name}': {e}");
+            continue;
+        }
+
+        imported += 1;
+        log::info!("Imported Grok provider '{name}' from live config");
+    }
+
+    Ok(imported + updated)
+}
+
+/// Remove a Grok model table from live config.
+pub fn remove_grok_provider_from_live(provider_id: &str) -> Result<(), AppError> {
+    use crate::grok_config;
+
+    if !grok_config::get_grok_dir().exists() {
+        log::debug!("Grok config directory doesn't exist, skipping removal of '{provider_id}'");
+        return Ok(());
+    }
+
+    grok_config::remove_model(provider_id)?;
+    log::info!("Grok provider '{provider_id}' removed from live config");
 
     Ok(())
 }
