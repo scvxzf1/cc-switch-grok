@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Scheme A: Grok worktree CC Switch (schema v15 + MCP/Skills)
+# Prefer debug when it has Grok MCP; kill stale (deleted) instances before start.
+set -euo pipefail
+
+export GDK_BACKEND=x11
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# scripts/ -> repo root; allow override via CC_SWITCH_TARGET_ROOT
+if [[ -n "${CC_SWITCH_TARGET_ROOT:-}" ]]; then
+  ROOT="$CC_SWITCH_TARGET_ROOT"
+else
+  ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)/src-tauri/target"
+fi
+
+RELEASE="$ROOT/release/cc-switch"
+DEBUG="$ROOT/debug/cc-switch"
+
+has_grok_mcp() {
+  local bin="$1"
+  [[ -x "$bin" ]] || return 1
+  # Fast path: avoid strings(1) on 500MB debug binaries (slow + SIGPIPE under pipefail).
+  grep -a -F -m1 -q "enabled_grok" "$bin" 2>/dev/null \
+    && grep -a -F -m1 -q "v14 -> v15" "$bin" 2>/dev/null
+}
+
+pick=""
+# Dev builds ship MCP/UI first; prefer debug when it has Grok MCP.
+if has_grok_mcp "$DEBUG"; then
+  pick="$DEBUG"
+elif has_grok_mcp "$RELEASE"; then
+  pick="$RELEASE"
+elif [[ -x "$DEBUG" ]]; then
+  pick="$DEBUG"
+elif [[ -x "$RELEASE" ]]; then
+  pick="$RELEASE"
+fi
+
+if [[ -z "${pick}" ]]; then
+  echo "CC Switch Grok binary missing under: $ROOT" >&2
+  exit 1
+fi
+
+if ! has_grok_mcp "$pick"; then
+  echo "[cc-switch-x11] WARNING: $pick lacks Grok MCP (v15/enabled_grok); MCP page will not show Grok badges" >&2
+fi
+
+# Kill stale instances so recompiled binaries are not left as (deleted) inodes,
+# and single-instance does not just focus an old window.
+mapfile -t stale < <(pgrep -f '/target/(debug|release)/cc-switch$' 2>/dev/null || true)
+for p in "${stale[@]:-}"; do
+  [[ -n "${p:-}" ]] || continue
+  echo "[cc-switch-x11] killing stale pid $p ($(readlink "/proc/$p/exe" 2>/dev/null || echo '?'))" >&2
+  kill -9 "$p" 2>/dev/null || true
+done
+sleep 0.2
+
+echo "[cc-switch-x11] using: $pick (mtime=$(stat -c %y "$pick"))" >&2
+exec "$pick" "$@"
