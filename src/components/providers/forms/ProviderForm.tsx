@@ -49,7 +49,8 @@ import {
 import {
   hermesProviderPresets,
   type HermesProviderPreset,
-} from "@/config/hermesProviderPresets";
+} from "@/config/hermesProviderPresets"
+import { grokProviderPresets } from "@/config/grokProviderPresets";
 import { OpenCodeFormFields } from "./OpenCodeFormFields";
 import { OpenClawFormFields } from "./OpenClawFormFields";
 import { HermesFormFields } from "./HermesFormFields";
@@ -391,7 +392,18 @@ function ProviderFormFull({
                 ? OPENCLAW_DEFAULT_CONFIG
                 : appId === "hermes"
                   ? HERMES_DEFAULT_CONFIG
-                  : CLAUDE_DEFAULT_CONFIG,
+                  : appId === "grok"
+                    ? JSON.stringify(
+                        {
+                          kind: "official",
+                          model: "grok-build",
+                          name: "Grok Build",
+                          useLocalRoute: false,
+                        },
+                        null,
+                        2,
+                      )
+                    : CLAUDE_DEFAULT_CONFIG,
       icon: initialData?.icon ?? "",
       iconColor: initialData?.iconColor ?? "",
     }),
@@ -679,6 +691,11 @@ function ProviderFormFull({
     } else if (appId === "openclaw") {
       return openclawProviderPresets.map<PresetEntry>((preset, index) => ({
         id: `openclaw-${index}`,
+        preset,
+      }));
+    } else if (appId === "grok") {
+      return grokProviderPresets.map<PresetEntry>((preset, index) => ({
+        id: `grok-${index}`,
         preset,
       }));
     } else if (appId === "hermes") {
