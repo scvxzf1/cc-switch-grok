@@ -319,6 +319,17 @@ impl ProxyServer {
                 "/codex/v1/chat/completions",
                 post(handlers::handle_chat_completions),
             )
+            // Grok local-route OpenAI Chat Completions
+            .route(
+                "/grok/v1/chat/completions",
+                post(handlers::handle_grok_chat_completions),
+            )
+            .route(
+                "/grok/chat/completions",
+                post(handlers::handle_grok_chat_completions),
+            )
+            .route("/grok/models", get(handlers::handle_grok_models))
+            .route("/grok/v1/models", get(handlers::handle_grok_models))
             // OpenAI Models API (Codex CLI reachability check)
             .route("/models", get(handlers::handle_models))
             .route("/v1/models", get(handlers::handle_models))

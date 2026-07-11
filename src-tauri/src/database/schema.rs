@@ -122,7 +122,7 @@ impl Database {
 
         // 8. Proxy Config 表（三行结构，app_type 主键）
         conn.execute("CREATE TABLE IF NOT EXISTS proxy_config (
-            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini')),
+            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini','grok')),
             proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
             listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1,
             enabled INTEGER NOT NULL DEFAULT 0, auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
@@ -166,6 +166,15 @@ impl Database {
                 circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
                 circuit_error_rate_threshold, circuit_min_requests)
                 VALUES ('gemini', 5, 60, 120, 600, 4, 2, 60, 0.6, 10)",
+                [],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+            conn.execute(
+                "INSERT OR IGNORE INTO proxy_config (app_type, max_retries,
+                streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+                circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+                circuit_error_rate_threshold, circuit_min_requests)
+                VALUES ('grok', 3, 60, 120, 600, 4, 2, 60, 0.6, 10)",
                 [],
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -477,6 +486,11 @@ impl Database {
                         log::info!("迁移数据库从 v11 到 v12（添加项目 Profiles 表）");
                         Self::migrate_v11_to_v12(conn)?;
                         Self::set_user_version(conn, 12)?;
+                    }
+                    12 => {
+                        log::info!("迁移数据库从 v12 到 v13（proxy_config 支持 grok）");
+                        Self::migrate_v12_to_v13(conn)?;
+                        Self::set_user_version(conn, 13)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -795,7 +809,7 @@ impl Database {
         // 创建新表
         conn.execute("DROP TABLE IF EXISTS proxy_config_new", [])?;
         conn.execute("CREATE TABLE proxy_config_new (
-            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini')),
+            app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini','grok')),
             proxy_enabled INTEGER NOT NULL DEFAULT 0, listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
             listen_port INTEGER NOT NULL DEFAULT 15721, enable_logging INTEGER NOT NULL DEFAULT 1,
             enabled INTEGER NOT NULL DEFAULT 0, auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
@@ -1319,6 +1333,108 @@ impl Database {
             [],
         )
         .map_err(|e| AppError::Database(format!("v11 -> v12 创建 profiles 表失败: {e}")))?;
+        Ok(())
+    }
+
+    /// v12 -> v13：proxy_config 支持 grok
+    fn migrate_v12_to_v13(conn: &Connection) -> Result<(), AppError> {
+        // SQLite cannot alter CHECK constraints in-place. Rebuild proxy_config with
+        // an expanded app_type allow-list and preserve existing rows.
+        if Self::table_exists(conn, "proxy_config")? {
+            conn.execute("DROP TABLE IF EXISTS proxy_config_new", [])
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            conn.execute(
+                "CREATE TABLE proxy_config_new (
+                    app_type TEXT PRIMARY KEY CHECK (app_type IN ('claude','codex','gemini','grok')),
+                    proxy_enabled INTEGER NOT NULL DEFAULT 0,
+                    listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
+                    listen_port INTEGER NOT NULL DEFAULT 15721,
+                    enable_logging INTEGER NOT NULL DEFAULT 1,
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
+                    max_retries INTEGER NOT NULL DEFAULT 3,
+                    streaming_first_byte_timeout INTEGER NOT NULL DEFAULT 60,
+                    streaming_idle_timeout INTEGER NOT NULL DEFAULT 120,
+                    non_streaming_timeout INTEGER NOT NULL DEFAULT 600,
+                    circuit_failure_threshold INTEGER NOT NULL DEFAULT 4,
+                    circuit_success_threshold INTEGER NOT NULL DEFAULT 2,
+                    circuit_timeout_seconds INTEGER NOT NULL DEFAULT 60,
+                    circuit_error_rate_threshold REAL NOT NULL DEFAULT 0.6,
+                    circuit_min_requests INTEGER NOT NULL DEFAULT 10,
+                    default_cost_multiplier TEXT NOT NULL DEFAULT '1',
+                    pricing_model_source TEXT NOT NULL DEFAULT 'response',
+                    live_takeover_active INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )",
+                [],
+            )
+            .map_err(|e| AppError::Database(format!("v12 -> v13 创建 proxy_config_new 失败: {e}")))?;
+
+            // Prefer a wide column list; SQLite will error only if old schema is unexpected.
+            // Fall back to app_type-only copy if needed.
+            let copy_result = conn.execute(
+                "INSERT INTO proxy_config_new (
+                    app_type, proxy_enabled, listen_address, listen_port, enable_logging,
+                    enabled, auto_failover_enabled, max_retries,
+                    streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+                    circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+                    circuit_error_rate_threshold, circuit_min_requests,
+                    default_cost_multiplier, pricing_model_source, live_takeover_active,
+                    created_at, updated_at
+                )
+                SELECT
+                    app_type,
+                    COALESCE(proxy_enabled, 0),
+                    COALESCE(listen_address, '127.0.0.1'),
+                    COALESCE(listen_port, 15721),
+                    COALESCE(enable_logging, 1),
+                    COALESCE(enabled, 0),
+                    COALESCE(auto_failover_enabled, 0),
+                    COALESCE(max_retries, 3),
+                    COALESCE(streaming_first_byte_timeout, 60),
+                    COALESCE(streaming_idle_timeout, 120),
+                    COALESCE(non_streaming_timeout, 600),
+                    COALESCE(circuit_failure_threshold, 4),
+                    COALESCE(circuit_success_threshold, 2),
+                    COALESCE(circuit_timeout_seconds, 60),
+                    COALESCE(circuit_error_rate_threshold, 0.6),
+                    COALESCE(circuit_min_requests, 10),
+                    COALESCE(default_cost_multiplier, '1'),
+                    COALESCE(pricing_model_source, 'response'),
+                    COALESCE(live_takeover_active, 0),
+                    COALESCE(created_at, datetime('now')),
+                    COALESCE(updated_at, datetime('now'))
+                FROM proxy_config",
+                [],
+            );
+            if let Err(e) = copy_result {
+                log::warn!("v12 -> v13 完整复制 proxy_config 失败，回退 app_type 复制: {e}");
+                conn.execute(
+                    "INSERT INTO proxy_config_new (app_type) SELECT app_type FROM proxy_config",
+                    [],
+                )
+                .map_err(|e2| {
+                    AppError::Database(format!("v12 -> v13 回退复制 proxy_config 失败: {e2}"))
+                })?;
+            }
+
+            conn.execute("DROP TABLE proxy_config", [])
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            conn.execute("ALTER TABLE proxy_config_new RENAME TO proxy_config", [])
+                .map_err(|e| AppError::Database(e.to_string()))?;
+        }
+
+        conn.execute(
+            "INSERT OR IGNORE INTO proxy_config (app_type, max_retries,
+                streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+                circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+                circuit_error_rate_threshold, circuit_min_requests)
+                VALUES ('grok', 3, 60, 120, 600, 4, 2, 60, 0.6, 10)",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("v12 -> v13 插入 grok proxy_config 失败: {e}")))?;
+
         Ok(())
     }
 

@@ -514,8 +514,8 @@ pub fn set_default_model(id: &str) -> Result<GrokWriteOutcome, AppError> {
 
 /// 切换供应商时写默认模型，并在非本地路由时 upsert model 段。
 ///
-/// `useLocalRoute=true` 时只准备 default（及调用方可先写入的元数据），
-/// 不在此任务写 proxy base_url。
+/// `useLocalRoute=true` 时只准备 default；实际 proxy base_url 由
+/// `apply_local_route_takeover` 在代理接管路径写入。
 pub fn apply_switch_defaults(
     provider_id: &str,
     settings: &Value,
@@ -560,6 +560,106 @@ pub fn apply_switch_defaults(
         upsert_model_into_doc(&mut doc, &default_id, &model_settings)?;
     }
 
+    set_default_model_into_doc(&mut doc, &default_id)?;
+    write_config_document_locked(&doc)
+}
+
+/// Build live model settings that point Grok at the local proxy.
+///
+/// Does **not** write the real upstream API key into `~/.grok/config.toml`.
+pub fn build_local_route_model_settings(
+    provider_id: &str,
+    settings: &Value,
+    proxy_base_url: &str,
+) -> Result<Value, AppError> {
+    let kind = settings
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("custom");
+    let use_local_route = settings
+        .get("useLocalRoute")
+        .or_else(|| settings.get("use_local_route"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if kind.eq_ignore_ascii_case("official") {
+        return Err(AppError::Config(
+            "Official Grok provider cannot enable local route".into(),
+        ));
+    }
+    if !use_local_route {
+        return Err(AppError::Config(
+            "Grok local route takeover requires useLocalRoute=true".into(),
+        ));
+    }
+
+    let default_id = default_model_id_from_settings(provider_id, settings);
+    let mut model_settings = serde_json::Map::new();
+    model_settings.insert("model".into(), Value::String(default_id));
+    model_settings.insert(
+        "base_url".into(),
+        Value::String(proxy_base_url.trim().trim_end_matches('/').to_string()),
+    );
+    model_settings.insert(
+        "api_backend".into(),
+        Value::String(
+            settings
+                .get("api_backend")
+                .or_else(|| settings.get("apiBackend"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("chat_completions")
+                .to_string(),
+        ),
+    );
+
+    if let Some(name) = settings.get("name").and_then(|v| v.as_str()) {
+        if !name.trim().is_empty() {
+            model_settings.insert("name".into(), Value::String(name.trim().to_string()));
+        }
+    }
+    if let Some(window) = extract_context_window(settings) {
+        model_settings.insert("context_window".into(), Value::from(window));
+    }
+
+    // Never write the real upstream key into live Grok config during takeover.
+    // Grok still needs a non-empty token for some clients, so use a managed placeholder.
+    model_settings.insert(
+        "api_key".into(),
+        Value::String("PROXY_MANAGED".to_string()),
+    );
+
+    Ok(Value::Object(model_settings))
+}
+
+/// Write local-route takeover into `~/.grok/config.toml`.
+///
+/// - sets `[models].default` to the entry mapping id
+/// - upserts `[model.<id>]` with proxy base_url + chat_completions backend
+/// - stores `PROXY_MANAGED` instead of the real upstream API key
+pub fn apply_local_route_takeover(
+    provider_id: &str,
+    settings: &Value,
+    proxy_base_url: &str,
+) -> Result<GrokWriteOutcome, AppError> {
+    let provider_id = provider_id.trim();
+    if provider_id.is_empty() {
+        return Err(AppError::Config("Grok provider id cannot be empty".into()));
+    }
+    let model_settings = build_local_route_model_settings(provider_id, settings, proxy_base_url)?;
+    let default_id = model_settings
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or(provider_id)
+        .to_string();
+
+    let _guard = grok_write_lock()
+        .lock()
+        .map_err(|_| AppError::Config("Grok config write lock poisoned".into()))?;
+
+    let mut doc = read_config_document()?;
+    upsert_model_into_doc(&mut doc, &default_id, &model_settings)?;
     set_default_model_into_doc(&mut doc, &default_id)?;
     write_config_document_locked(&doc)
 }
@@ -636,6 +736,148 @@ pub fn read_auth_status() -> Result<GrokAuthStatus, AppError> {
         email: best_email,
         expired: all_expired,
     })
+}
+
+
+/// Apply local-route proxy target onto the default model table.
+///
+/// Writes only known keys: base_url/model/api_backend. Does not write upstream API keys.
+pub fn apply_local_route_proxy(
+    default_id: &str,
+    proxy_base_url: &str,
+    model_id: &str,
+    api_backend: Option<&str>,
+) -> Result<GrokWriteOutcome, AppError> {
+    let default_id = default_id.trim();
+    let proxy_base_url = proxy_base_url.trim();
+    let model_id = model_id.trim();
+    if default_id.is_empty() {
+        return Err(AppError::Config("Grok local-route model id cannot be empty".into()));
+    }
+    if proxy_base_url.is_empty() {
+        return Err(AppError::Config("Grok local-route proxy url cannot be empty".into()));
+    }
+    if model_id.is_empty() {
+        return Err(AppError::Config("Grok local-route model value cannot be empty".into()));
+    }
+
+    let settings = serde_json::json!({
+        "model": model_id,
+        "base_url": proxy_base_url,
+        "api_backend": api_backend.unwrap_or("chat_completions"),
+        "api_key": ""
+    });
+    // ensure empty key is removed by set_model path
+    set_model(default_id, settings)?;
+    set_default_model(default_id)
+}
+
+/// Rewrite OpenAI chat body model via modelMappings and inject thinking/effort params.
+pub fn transform_proxy_chat_body(
+    mut body: Value,
+    settings: &Value,
+) -> Result<Value, AppError> {
+    let request_model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("")
+        .to_string();
+
+    let mappings = settings
+        .get("modelMappings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut upstream = None;
+    for row in &mappings {
+        let id = row.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let up = row
+            .get("upstreamModel")
+            .or_else(|| row.get("upstream_model"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !request_model.is_empty() && (id == request_model || up == request_model) {
+            upstream = Some(up.to_string());
+            break;
+        }
+        if row.get("isDefault").and_then(|v| v.as_bool()) == Some(true) && upstream.is_none() {
+            if !up.is_empty() {
+                upstream = Some(up.to_string());
+            }
+        }
+    }
+    if let Some(model) = upstream.filter(|s| !s.is_empty()) {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert("model".into(), Value::String(model));
+        }
+    } else if let Some(model) = settings.get("model").and_then(|v| v.as_str()) {
+        if let Some(obj) = body.as_object_mut() {
+            if !obj.contains_key("model") || obj.get("model").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                obj.insert("model".into(), Value::String(model.to_string()));
+            }
+        }
+    }
+
+    let reasoning = settings.get("grokChatReasoning").cloned().unwrap_or(Value::Null);
+    let supports_thinking = reasoning
+        .get("supportsThinking")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let supports_effort = reasoning
+        .get("supportsEffort")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let effort = settings
+        .get("defaultReasoningEffort")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    if let Some(obj) = body.as_object_mut() {
+        if supports_thinking {
+            let thinking_param = reasoning
+                .get("thinkingParam")
+                .and_then(|v| v.as_str())
+                .unwrap_or("thinking");
+            match thinking_param {
+                "enable_thinking" => {
+                    obj.insert("enable_thinking".into(), Value::Bool(true));
+                }
+                "reasoning_split" => {
+                    obj.insert("reasoning_split".into(), Value::Bool(true));
+                }
+                _ => {
+                    let mut nested = serde_json::Map::new();
+                    nested.insert("type".into(), Value::String("enabled".into()));
+                    obj.insert("thinking".into(), Value::Object(nested));
+                }
+            }
+        }
+        if supports_effort {
+            if let Some(effort) = effort {
+                let effort_param = reasoning
+                    .get("effortParam")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("reasoning_effort");
+                match effort_param {
+                    "none" => {}
+                    "reasoning.effort" => {
+                        let mut nested = serde_json::Map::new();
+                        nested.insert("effort".into(), Value::String(effort.to_string()));
+                        obj.insert("reasoning".into(), Value::Object(nested));
+                    }
+                    _ => {
+                        obj.insert("reasoning_effort".into(), Value::String(effort.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(body)
 }
 
 #[cfg(test)]
@@ -949,7 +1191,80 @@ compact_mode = true
 
     #[test]
     #[serial]
-    fn remove_model_deletes_only_target_table() {
+    fn grok_takeover_rewrites_base_url_to_local_proxy() {
+        with_test_home(|| {
+            reset_grok_override();
+            let config_path = get_grok_config_path();
+            fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+            fs::write(
+                &config_path,
+                r#"[ui]
+yolo = true
+"#,
+            )
+            .unwrap();
+
+            let settings = serde_json::json!({
+                "kind": "custom",
+                "useLocalRoute": true,
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "sk-real-upstream",
+                "api_backend": "chat_completions",
+                "name": "Route Proxy",
+                "modelMappings": [
+                    {"id": "route-entry", "upstreamModel": "anthropic/claude-sonnet-4", "isDefault": true, "contextWindow": 200000}
+                ],
+                "grokChatReasoning": {
+                    "supportsThinking": true,
+                    "supportsEffort": true,
+                    "thinkingParam": "thinking",
+                    "effortParam": "reasoning_effort"
+                },
+                "defaultReasoningEffort": "high"
+            });
+
+            apply_local_route_takeover(
+                "route-proxy",
+                &settings,
+                "http://127.0.0.1:15721/grok/v1",
+            )
+            .unwrap();
+
+            let written = fs::read_to_string(&config_path).unwrap();
+            assert!(
+                written.contains("default = \"route-entry\""),
+                "default should be mapping id, got:\n{written}"
+            );
+            assert!(
+                written.contains("[model.route-entry]"),
+                "expected local-route model table, got:\n{written}"
+            );
+            assert!(
+                written.contains("http://127.0.0.1:15721/grok/v1"),
+                "base_url should point at local proxy, got:\n{written}"
+            );
+            assert!(
+                written.contains("api_backend = \"chat_completions\""),
+                "got:\n{written}"
+            );
+            assert!(
+                written.contains("PROXY_MANAGED"),
+                "live key must be placeholder, got:\n{written}"
+            );
+            assert!(
+                !written.contains("sk-real-upstream"),
+                "real upstream key must not be written to live config, got:\n{written}"
+            );
+            assert!(
+                written.contains("[ui]") && written.contains("yolo = true"),
+                "unrelated sections must remain, got:\n{written}"
+            );
+        });
+    }
+
+        #[test]
+    #[serial]
+fn remove_model_deletes_only_target_table() {
         with_test_home(|| {
             reset_grok_override();
             let config_path = get_grok_config_path();
@@ -1065,4 +1380,67 @@ base_url = "https://old.example/v1"
             assert!(!status.logged_in);
         });
     }
+
+    #[test]
+    #[serial]
+    fn apply_local_route_proxy_rewrites_base_url_to_local_proxy() {
+        with_test_home(|| {
+            reset_grok_override();
+            let config_path = get_grok_config_path();
+            fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+            fs::write(
+                &config_path,
+                r#"[ui]
+yolo = true
+"#,
+            )
+            .unwrap();
+
+            apply_local_route_proxy(
+                "proxy-a",
+                "http://127.0.0.1:19283/v1",
+                "proxy-a",
+                Some("chat_completions"),
+            )
+            .unwrap();
+            let written = fs::read_to_string(&config_path).unwrap();
+            assert!(written.contains("[model.proxy-a]"), "got:\n{written}");
+            assert!(
+                written.contains("http://127.0.0.1:19283/v1"),
+                "got:\n{written}"
+            );
+            assert!(written.contains("default = \"proxy-a\""), "got:\n{written}");
+            assert!(
+                !written.contains("api_key"),
+                "local route must not write api_key, got:\n{written}"
+            );
+            assert!(written.contains("[ui]") && written.contains("yolo = true"));
+        });
+    }
+
+    #[test]
+    fn grok_proxy_rewrites_model_and_injects_reasoning_effort() {
+        let body = serde_json::json!({
+            "model": "proxy-a",
+            "messages": [{"role":"user","content":"hi"}]
+        });
+        let settings = serde_json::json!({
+            "model": "anthropic/claude-sonnet",
+            "modelMappings": [
+                {"id":"proxy-a","upstreamModel":"anthropic/claude-sonnet","isDefault":true}
+            ],
+            "grokChatReasoning": {
+                "supportsThinking": true,
+                "supportsEffort": true,
+                "thinkingParam": "thinking",
+                "effortParam": "reasoning_effort"
+            },
+            "defaultReasoningEffort": "high"
+        });
+        let out = transform_proxy_chat_body(body, &settings).unwrap();
+        assert_eq!(out["model"], "anthropic/claude-sonnet");
+        assert_eq!(out["thinking"]["type"], "enabled");
+        assert_eq!(out["reasoning_effort"], "high");
+    }
+
 }

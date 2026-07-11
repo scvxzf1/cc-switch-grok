@@ -22,6 +22,7 @@ pub(crate) mod codex_responses_sse;
 pub mod copilot_auth;
 pub mod copilot_model_map;
 mod gemini;
+mod grok;
 pub(crate) mod gemini_schema;
 pub mod gemini_shadow;
 pub mod models;
@@ -55,6 +56,7 @@ pub use codex::{
     should_convert_codex_responses_to_anthropic, should_convert_codex_responses_to_chat,
 };
 pub use gemini::GeminiAdapter;
+pub use grok::apply_grok_chat_request_transforms;
 
 /// 供应商类型枚举
 ///
@@ -188,8 +190,9 @@ impl ProviderType {
                 }
                 ProviderType::Gemini
             }
-            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Grok => {
-                // These apps don't support proxy (phase-1 for Grok), fallback to Codex-like type
+            AppType::Grok => ProviderType::Codex,
+            AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
+                // These apps don't support proxy, fallback to Codex-like type
                 ProviderType::Codex
             }
         }
@@ -242,8 +245,9 @@ pub fn get_adapter(app_type: &AppType) -> Box<dyn ProviderAdapter> {
         AppType::Claude | AppType::ClaudeDesktop => Box::new(ClaudeAdapter::new()),
         AppType::Codex => Box::new(CodexAdapter::new()),
         AppType::Gemini => Box::new(GeminiAdapter::new()),
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Grok => {
-            // These apps don't support proxy (phase-1 for Grok), fallback to Codex adapter
+        AppType::Grok => Box::new(CodexAdapter::new()),
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
+            // These apps don't support proxy, fallback to Codex adapter
             Box::new(CodexAdapter::new())
         }
     }

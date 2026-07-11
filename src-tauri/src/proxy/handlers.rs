@@ -622,6 +622,134 @@ fn decode_codex_request_body(
 // Codex API 处理器
 // ============================================================================
 
+/// 处理 Grok 本地路由 /grok/v1/chat/completions（OpenAI Chat Completions 兼容）
+pub async fn handle_grok_chat_completions(
+    State(state): State<ProxyState>,
+    request: axum::extract::Request,
+) -> Result<axum::response::Response, ProxyError> {
+    let (parts, req_body) = request.into_parts();
+    let method = parts.method.clone();
+    let uri = parts.uri;
+    let mut headers = parts.headers;
+    let extensions = parts.extensions;
+    let body_bytes = req_body
+        .collect()
+        .await
+        .map_err(|e| ProxyError::Internal(format!("Failed to read request body: {e}")))?
+        .to_bytes();
+    let body_bytes = decode_codex_request_body(&mut headers, body_bytes)?;
+    let body: Value = serde_json::from_slice(&body_bytes)
+        .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
+
+    let mut ctx =
+        RequestContext::new(&state, &body, &headers, AppType::Grok, "Grok", "grok").await?;
+    let endpoint = endpoint_with_query(&uri, "/chat/completions");
+
+    let is_stream = body
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let forwarder = ctx.create_forwarder(&state);
+    let mut result = match forwarder
+        .forward_with_retry(
+            &AppType::Grok,
+            method,
+            &endpoint,
+            body,
+            headers,
+            extensions,
+            ctx.get_providers(),
+        )
+        .await
+    {
+        Ok(result) => result,
+        Err(mut err) => {
+            if let Some(provider) = err.provider.take() {
+                ctx.provider = provider;
+            }
+            log_forward_error(&state, &ctx, is_stream, &err.error);
+            return build_codex_proxy_error_response(&ctx, &endpoint, &err.error);
+        }
+    };
+
+    let connection_guard = result.connection_guard.take();
+    ctx.outbound_model = result.outbound_model.take();
+    ctx.provider = result.provider;
+    let response = result.response;
+
+    process_response(
+        response,
+        &ctx,
+        &state,
+        &OPENAI_PARSER_CONFIG,
+        connection_guard,
+    )
+    .await
+}
+
+
+/// 返回 Grok 本地路由可用的模型列表（modelMappings / model）
+pub async fn handle_grok_models(
+    State(state): State<ProxyState>,
+) -> Result<Json<Value>, ProxyError> {
+    let providers = state
+        .provider_router
+        .select_providers("grok")
+        .await
+        .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
+    let provider = providers.first().ok_or(ProxyError::NoAvailableProvider)?;
+
+    let mut models = Vec::new();
+    if let Some(rows) = provider
+        .settings_config
+        .get("modelMappings")
+        .or_else(|| provider.settings_config.get("model_mappings"))
+        .and_then(|v| v.as_array())
+    {
+        for row in rows {
+            if let Some(id) = row
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                models.push(json!({
+                    "id": id,
+                    "object": "model",
+                    "owned_by": "grok-local-route"
+                }));
+            }
+        }
+    }
+    if models.is_empty() {
+        if let Some(model) = provider
+            .settings_config
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            models.push(json!({
+                "id": model,
+                "object": "model",
+                "owned_by": "grok-local-route"
+            }));
+        } else {
+            models.push(json!({
+                "id": provider.id,
+                "object": "model",
+                "owned_by": "grok-local-route"
+            }));
+        }
+    }
+
+    Ok(Json(json!({
+        "object": "list",
+        "data": models
+    })))
+}
+
 /// 处理 /v1/chat/completions 请求（OpenAI Chat Completions API - Codex CLI）
 pub async fn handle_chat_completions(
     State(state): State<ProxyState>,

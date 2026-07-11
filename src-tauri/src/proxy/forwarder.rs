@@ -1159,6 +1159,10 @@ impl RequestForwarder {
                 super::model_mapper::strip_one_m_suffix_for_upstream_from_body(mapped_body);
         }
 
+        if matches!(app_type, AppType::Grok) {
+            super::providers::apply_grok_chat_request_transforms(provider, &mut mapped_body);
+        }
+
         // --- Copilot 优化器：分类 + 请求体优化（在格式转换之前执行） ---
         // 注意：确定性 ID 也在此处计算，因为 mapped_body 在格式转换时会被 move
         //

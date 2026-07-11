@@ -2435,7 +2435,10 @@ impl ProviderService {
         // current state so a just-started takeover cannot be overwritten by a
         // normal live write.
         let _switch_guard =
-            if matches!(app_type, AppType::Claude | AppType::Codex | AppType::Gemini) {
+            if matches!(
+                app_type,
+                AppType::Claude | AppType::Codex | AppType::Gemini | AppType::Grok
+            ) {
                 Some(futures::executor::block_on(
                     state.proxy_service.lock_switch_for_app(app_type.as_str()),
                 ))
@@ -2569,8 +2572,10 @@ impl ProviderService {
             }
         }
 
-        // Additive mode apps skip setting is_current (no such concept)
-        if !app_type.is_additive_mode() {
+        // Additive mode apps generally skip is_current (no exclusive live file).
+        // Grok is additive for model tables, but local-route proxy still needs a
+        // current provider target for request routing / takeover.
+        if !app_type.is_additive_mode() || matches!(app_type, AppType::Grok) {
             // Update local settings (device-level, takes priority)
             crate::settings::set_current_provider(&app_type, Some(id))?;
 
@@ -2601,17 +2606,70 @@ impl ProviderService {
         }
 
         // Grok is additive; switching updates [models].default (+ optional model table).
+        // Custom + useLocalRoute=true also enables app-level proxy takeover and rewrites
+        // live base_url to the local proxy endpoint.
         if matches!(app_type, AppType::Grok) {
-            if let Err(e) =
-                crate::grok_config::apply_switch_defaults(&provider.id, &provider.settings_config)
-            {
-                log::warn!(
-                    "Failed to update Grok model defaults after switching to '{}': {e}",
-                    provider.id
+            let use_local_route = provider
+                .settings_config
+                .get("useLocalRoute")
+                .or_else(|| provider.settings_config.get("use_local_route"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let is_official = provider
+                .settings_config
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .map(|s| s.eq_ignore_ascii_case("official"))
+                .unwrap_or_else(|| provider.category.as_deref() == Some("official"));
+
+            if is_official && use_local_route {
+                return Err(AppError::Config(
+                    "Official Grok provider cannot enable local route".into(),
+                ));
+            }
+
+            if use_local_route {
+                // Prepare models.default first so takeover has a stable entry id.
+                if let Err(e) = crate::grok_config::apply_switch_defaults(
+                    &provider.id,
+                    &provider.settings_config,
+                ) {
+                    log::warn!(
+                        "Failed to prepare Grok defaults before local-route takeover '{}': {e}",
+                        provider.id
+                    );
+                    result
+                        .warnings
+                        .push(format!("grok_model_defaults_failed:{}", provider.id));
+                }
+                if let Err(e) = futures::executor::block_on(
+                    state.proxy_service.set_takeover_for_app("grok", true),
+                ) {
+                    log::warn!(
+                        "Failed to enable Grok local-route takeover after switching to '{}': {e}",
+                        provider.id
+                    );
+                    result
+                        .warnings
+                        .push(format!("grok_local_route_takeover_failed:{}", provider.id));
+                }
+            } else {
+                // Leaving local route: clear app takeover if active, then write direct defaults.
+                let _ = futures::executor::block_on(
+                    state.proxy_service.set_takeover_for_app("grok", false),
                 );
-                result
-                    .warnings
-                    .push(format!("grok_model_defaults_failed:{}", provider.id));
+                if let Err(e) = crate::grok_config::apply_switch_defaults(
+                    &provider.id,
+                    &provider.settings_config,
+                ) {
+                    log::warn!(
+                        "Failed to update Grok model defaults after switching to '{}': {e}",
+                        provider.id
+                    );
+                    result
+                        .warnings
+                        .push(format!("grok_model_defaults_failed:{}", provider.id));
+                }
             }
         }
 
