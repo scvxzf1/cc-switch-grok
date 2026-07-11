@@ -645,6 +645,20 @@ impl ProxyService {
         let app = AppType::from_str(app_type).map_err(|e| format!("无效的应用类型: {e}"))?;
         let app_type_str = app.as_str();
         let _guard = self.switch_locks.lock_for_app(app_type_str).await;
+        self.set_takeover_for_app_inner(app_type, enabled).await
+    }
+
+    /// 已持有 per-app switch lock 时使用的接管实现。
+    ///
+    /// `ProviderService::switch` 会先 `lock_switch_for_app` 再 `block_on` 本方法；
+    /// 若这里再抢同一把锁会死锁，导致 UI「无响应」。
+    pub(crate) async fn set_takeover_for_app_inner(
+        &self,
+        app_type: &str,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let app = AppType::from_str(app_type).map_err(|e| format!("无效的应用类型: {e}"))?;
+        let app_type_str = app.as_str();
 
         if enabled {
             // 1) 代理服务未运行则自动启动

@@ -425,3 +425,65 @@ fn migration_snapshot_overrides_multi_source_directory_inference() {
         "migration should no longer infer OpenCode enablement from a duplicate directory alone"
     );
 }
+
+#[test]
+fn toggle_skill_app_enables_and_syncs_to_grok() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let home = ensure_test_home();
+
+    let ssot_dir = home.join(".cc-switch").join("skills").join("grok-skill");
+    write_skill(&ssot_dir, "Grok Skill");
+
+    let state = create_test_state().expect("create test state");
+    state
+        .db
+        .save_skill(&InstalledSkill {
+            id: "local:grok-skill".to_string(),
+            name: "Grok Skill".to_string(),
+            description: Some("Enable for Grok".to_string()),
+            directory: "grok-skill".to_string(),
+            repo_owner: None,
+            repo_name: None,
+            repo_branch: None,
+            readme_url: None,
+            apps: SkillApps::default(),
+            installed_at: 1,
+            content_hash: None,
+            updated_at: 0,
+        })
+        .expect("save skill");
+
+    SkillService::toggle_app(&state.db, "local:grok-skill", &AppType::Grok, true)
+        .expect("toggle grok on");
+
+    let enabled = state
+        .db
+        .get_installed_skill("local:grok-skill")
+        .expect("load skill")
+        .expect("skill exists");
+    assert!(enabled.apps.grok, "grok enable flag should persist");
+    assert!(
+        enabled.apps.is_enabled_for(&AppType::Grok),
+        "SkillApps::is_enabled_for(Grok) should return true"
+    );
+
+    let grok_skill = home.join(".grok").join("skills").join("grok-skill");
+    assert!(
+        grok_skill.join("SKILL.md").exists(),
+        "toggling Grok on should sync skill into ~/.grok/skills"
+    );
+
+    SkillService::toggle_app(&state.db, "local:grok-skill", &AppType::Grok, false)
+        .expect("toggle grok off");
+    let disabled = state
+        .db
+        .get_installed_skill("local:grok-skill")
+        .expect("load skill")
+        .expect("skill exists");
+    assert!(!disabled.apps.grok, "grok enable flag should clear");
+    assert!(
+        !grok_skill.exists(),
+        "toggling Grok off should remove managed skill from ~/.grok/skills"
+    );
+}

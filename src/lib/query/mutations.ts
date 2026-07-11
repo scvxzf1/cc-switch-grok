@@ -111,14 +111,27 @@ export const useAddProviderMutation = (appId: AppId) => {
         );
       }
 
-      toast.success(
-        t("notifications.providerAdded", {
-          defaultValue: "供应商已添加",
-        }),
-        {
-          closeButton: true,
-        },
-      );
+      if (appId === "grok") {
+        toast.success(
+          t("notifications.grokProviderRegistered", {
+            defaultValue:
+              "已写入 Grok 配置，可在 /model 列表中看到；不会自动改新会话默认",
+          }),
+          {
+            duration: 6500,
+            closeButton: true,
+          },
+        );
+      } else {
+        toast.success(
+          t("notifications.providerAdded", {
+            defaultValue: "供应商已添加",
+          }),
+          {
+            closeButton: true,
+          },
+        );
+      }
     },
     onError: (error: Error) => {
       const detail = extractErrorMessage(error) || t("common.unknown");

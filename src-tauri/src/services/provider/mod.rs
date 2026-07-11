@@ -1614,6 +1614,38 @@ command = "legacy-cmd"
 
     #[test]
     #[serial]
+    fn add_grok_provider_writes_live_even_when_add_to_live_false() {
+        with_test_home(|state, _| {
+            let provider = grok_provider("force-live-grok");
+            ProviderService::add(state, AppType::Grok, provider.clone(), false)
+                .expect("add grok provider should succeed");
+
+            let models = crate::grok_config::get_models().expect("read grok models");
+            assert!(
+                models.contains_key(&provider.id),
+                "Grok add must write [model.<id>] even if add_to_live=false, got keys: {:?}",
+                models.keys().collect::<Vec<_>>()
+            );
+            assert_eq!(
+                models[&provider.id]["base_url"].as_str().unwrap(),
+                "https://api.example.com/v1"
+            );
+
+            let saved = state
+                .db
+                .get_provider_by_id(&provider.id, AppType::Grok.as_str())
+                .expect("query")
+                .expect("provider exists");
+            assert_eq!(
+                saved.meta.as_ref().and_then(|m| m.live_config_managed),
+                Some(true),
+                "live_config_managed must be forced true for Grok"
+            );
+        });
+    }
+
+    #[test]
+    #[serial]
     fn import_grok_providers_from_live_updates_existing_provider_from_live() {
         with_test_home(|state, _| {
             let provider = grok_provider("existing-grok");
@@ -1990,10 +2022,11 @@ impl ProviderService {
     /// 优先从本地 settings 读取，验证后 fallback 到数据库的 is_current 字段。
     /// 这确保了云同步场景下多设备可以独立选择供应商，且返回的 ID 一定有效。
     ///
-    /// 对于累加模式应用（OpenCode, OpenClaw），不存在"当前供应商"概念，直接返回空字符串。
+    /// 对于累加模式应用（OpenCode, OpenClaw, Hermes），不存在"当前供应商"概念，直接返回空字符串。
+    /// Grok 虽是 additive（多模型表共存），但仍用 current provider 驱动「启用/使用中」按钮与本地路由。
     pub fn current(state: &AppState, app_type: AppType) -> Result<String, AppError> {
-        // Additive mode apps have no "current" provider concept
-        if app_type.is_additive_mode() {
+        // Additive mode apps (except Grok) have no exclusive "current" provider concept
+        if app_type.is_additive_mode() && !matches!(app_type, AppType::Grok) {
             return Ok(String::new());
         }
         crate::settings::get_effective_current_provider(&state.db, &app_type)
@@ -2013,8 +2046,17 @@ impl ProviderService {
         Self::validate_provider_settings(&app_type, &provider)?;
         normalize_provider_common_config_for_storage(state.db.as_ref(), &app_type, &mut provider)?;
         Self::normalize_usage_script_credential_overrides(&app_type, &mut provider);
+        // Grok is additive for multi-model tables, but newly added providers should
+        // always land in ~/.grok/config.toml so they show up in Grok's /model list.
+        // Duplication still passes add_to_live=false for other additive apps; only Grok
+        // forces live registration (OpenCode-style "add means available").
+        let effective_add_to_live = if matches!(app_type, AppType::Grok) {
+            true
+        } else {
+            add_to_live
+        };
         if app_type.is_additive_mode() {
-            Self::set_provider_live_config_managed(&mut provider, add_to_live);
+            Self::set_provider_live_config_managed(&mut provider, effective_add_to_live);
         }
 
         // Save to database
@@ -2030,7 +2072,7 @@ impl ProviderService {
                 // Users must explicitly switch/apply an OMO provider to activate it.
                 return Ok(true);
             }
-            if !add_to_live {
+            if !effective_add_to_live {
                 return Ok(true);
             }
             write_live_with_common_config(state.db.as_ref(), &app_type, &provider)?;
@@ -2643,7 +2685,7 @@ impl ProviderService {
                         .push(format!("grok_model_defaults_failed:{}", provider.id));
                 }
                 if let Err(e) = futures::executor::block_on(
-                    state.proxy_service.set_takeover_for_app("grok", true),
+                    state.proxy_service.set_takeover_for_app_inner("grok", true),
                 ) {
                     log::warn!(
                         "Failed to enable Grok local-route takeover after switching to '{}': {e}",
@@ -2656,7 +2698,7 @@ impl ProviderService {
             } else {
                 // Leaving local route: clear app takeover if active, then write direct defaults.
                 let _ = futures::executor::block_on(
-                    state.proxy_service.set_takeover_for_app("grok", false),
+                    state.proxy_service.set_takeover_for_app_inner("grok", false),
                 );
                 if let Err(e) = crate::grok_config::apply_switch_defaults(
                     &provider.id,

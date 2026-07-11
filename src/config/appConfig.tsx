@@ -33,10 +33,17 @@ export const SKILLS_APP_IDS: AppId[] = [
   "gemini",
   "opencode",
   "hermes",
+  "grok",
 ];
 
 /** App IDs shown in MCP panels (excludes OpenClaw) */
-export const MCP_APP_IDS: AppId[] = [...SKILLS_APP_IDS];
+export const MCP_APP_IDS: AppId[] = [
+  "claude",
+  "codex",
+  "gemini",
+  "opencode",
+  "hermes",
+];
 
 export const APP_ICON_MAP: Record<AppId, AppConfig> = {
   claude: {

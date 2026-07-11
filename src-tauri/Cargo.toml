@@ -16,7 +16,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 doctest = false
 
 [features]
-default = []
+# custom-protocol: 生产模式（内嵌 frontendDist，不走 localhost:3000）
+# tauri CLI `tauri build` 会启用；裸 `cargo build --release` 也要默认开，避免误用 dev UI
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
 test-hooks = []
 
 [build-dependencies]

@@ -265,7 +265,9 @@
     "backfillWarning": "切換成功，但舊供應商設定回填失敗，您手動修改的設定可能未儲存",
     "windowControlFailed": "視窗控制失敗：{{error}}",
     "officialBlockedByProxy": "本地路由模式下不能切換至官方供應商，使用路由存取官方 API 可能導致帳號被封鎖",
-    "proxyOfficialWarning": "目前供應商 {{name}} 是官方供應商，建議切換至第三方供應商後再使用本地路由"
+    "proxyOfficialWarning": "目前供應商 {{name}} 是官方供應商，建議切換至第三方供應商後再使用本地路由",
+    "grokProviderRegistered": "已寫入 Grok 設定，可在 /model 清單中看到；不會自動改新工作階段預設",
+    "grokDefaultSet": "已設為 Grok 新工作階段預設。目前工作階段不會自動切換，請 /model 選擇或新開 grok"
   },
   "confirm": {
     "deleteProvider": "刪除供應商",

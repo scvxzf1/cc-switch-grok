@@ -282,8 +282,13 @@ export function useProviderActions(
           } else if (activeApp === "opencode" || activeApp === "openclaw") {
             messageKey = "notifications.addToConfigSuccess";
             defaultMessage = "已添加到配置";
+          } else if (activeApp === "grok") {
+            messageKey = "notifications.grokDefaultSet";
+            defaultMessage =
+              "已设为 Grok 新会话默认。当前会话不会自动切换，请 /model 选择或新开 grok";
           }
           toast.success(t(messageKey, { defaultValue: defaultMessage }), {
+            duration: activeApp === "grok" ? 7000 : undefined,
             closeButton: true,
           });
         }
