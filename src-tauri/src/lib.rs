@@ -1464,6 +1464,11 @@ pub fn run() {
             commands::set_hermes_memory,
             commands::get_hermes_memory_limits,
             commands::set_hermes_memory_enabled,
+            // Grok specific
+            commands::import_grok_providers_from_live,
+            commands::get_grok_live_provider_ids,
+            commands::get_grok_live_provider,
+            commands::get_grok_auth_status,
             // Global upstream proxy
             commands::get_global_proxy_url,
             commands::set_global_proxy_url,

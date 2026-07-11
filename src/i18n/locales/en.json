@@ -3024,6 +3024,12 @@
       "providerKey": "Provider key",
       "providerKeyInvalid": "Provider key can only contain lowercase letters, numbers, and hyphens",
       "providerKeyDuplicate": "This provider key already exists"
+    },
+    "auth": {
+      "loggedIn": "Signed in",
+      "notLoggedIn": "Not signed in",
+      "expired": "Login expired",
+      "email": "Account"
     }
   }
 }

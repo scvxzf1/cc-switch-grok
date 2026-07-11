@@ -111,8 +111,8 @@ pub struct ToolVersion {
     wsl_distro: Option<String>,
 }
 
-const VALID_TOOLS: [&str; 6] = [
-    "claude", "codex", "gemini", "opencode", "openclaw", "hermes",
+const VALID_TOOLS: [&str; 7] = [
+    "claude", "codex", "gemini", "opencode", "openclaw", "hermes", "grok",
 ];
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -427,6 +427,7 @@ fn tool_display_name(tool: &str) -> &'static str {
         "opencode" => "OpenCode",
         "openclaw" => "OpenClaw",
         "hermes" => "Hermes",
+        "grok" => "Grok",
         _ => "Unknown",
     }
 }
@@ -1610,6 +1611,15 @@ fn build_tool_search_paths(tool: &str) -> Vec<std::path::PathBuf> {
         }
     }
 
+    if tool == "grok" {
+        if !home.as_os_str().is_empty() {
+            push_unique_path(&mut search_paths, home.join(".grok").join("bin"));
+        }
+        if let Some(override_dir) = crate::settings::get_grok_override_dir() {
+            push_unique_path(&mut search_paths, override_dir.join("bin"));
+        }
+    }
+
     let path_env = std::env::var_os("PATH");
     extend_from_cli_path_env(&mut search_paths, path_env);
     search_paths
@@ -2547,6 +2557,7 @@ fn wsl_distro_for_tool(tool: &str) -> Option<String> {
         "opencode" => crate::settings::get_opencode_override_dir(),
         "openclaw" => crate::settings::get_openclaw_override_dir(),
         "hermes" => crate::settings::get_hermes_override_dir(),
+        "grok" => crate::settings::get_grok_override_dir(),
         _ => None,
     }?;
 

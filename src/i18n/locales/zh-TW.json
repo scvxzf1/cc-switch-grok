@@ -2996,6 +2996,12 @@
       "providerKey": "供應商標識",
       "providerKeyInvalid": "供應商標識只能包含小寫字母、數字和連字符",
       "providerKeyDuplicate": "該供應商標識已存在"
+    },
+    "auth": {
+      "loggedIn": "已登入",
+      "notLoggedIn": "未登入",
+      "expired": "登入已過期",
+      "email": "帳號"
     }
   }
 }

@@ -129,6 +129,7 @@ import {
 import { resolveManagedAccountId } from "@/lib/authBinding";
 import { useOpenClawLiveProviderIds } from "@/hooks/useOpenClaw";
 import { useHermesLiveProviderIds } from "@/hooks/useHermes";
+import { useGrokLiveProviderIds } from "@/hooks/useGrok";
 
 type PresetEntry = {
   id: string;
@@ -916,6 +917,9 @@ function ProviderFormFull({
     data: hermesLiveProviderIds = [],
     isLoading: isHermesLiveProviderIdsLoading,
   } = useHermesLiveProviderIds(appId === "hermes");
+  const { data: grokLiveProviderIds = [] } = useGrokLiveProviderIds(
+    appId === "grok",
+  );
 
   const additiveExistingProviderKeys = useMemo(() => {
     if (appId === "opencode" && !isAnyOmoCategory) {
@@ -949,12 +953,24 @@ function ProviderFormFull({
       );
     }
 
+    if (appId === "grok") {
+      return Array.from(
+        new Set(
+          [...grokForm.existingGrokKeys, ...grokLiveProviderIds].filter(
+            (key) => key !== providerId,
+          ),
+        ),
+      );
+    }
+
     return [];
   }, [
     appId,
     existingOpencodeKeys,
     hermesForm.existingHermesKeys,
     hermesLiveProviderIds,
+    grokForm.existingGrokKeys,
+    grokLiveProviderIds,
     isAnyOmoCategory,
     openclawForm.existingOpenclawKeys,
     openclawLiveProviderIds,

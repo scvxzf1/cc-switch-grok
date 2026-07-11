@@ -29,6 +29,7 @@ import {
   useHermesLiveProviderIds,
   useHermesModelConfig,
 } from "@/hooks/useHermes";
+import { useGrokAuthStatus, useGrokLiveProviderIds } from "@/hooks/useGrok";
 import { useStreamCheck } from "@/hooks/useStreamCheck";
 import { ProviderCard } from "@/components/providers/ProviderCard";
 import { ProviderEmptyState } from "@/components/providers/ProviderEmptyState";
@@ -111,6 +112,10 @@ export function ProviderList({
   // Hermes: 查询 live 配置中的供应商 ID 列表，用于判断 isInConfig
   const { data: hermesLiveIds } = useHermesLiveProviderIds(appId === "hermes");
 
+  // Grok: 查询 live 配置中的供应商 ID 列表，用于判断 isInConfig
+  const { data: grokLiveIds } = useGrokLiveProviderIds(appId === "grok");
+  const { data: grokAuthStatus } = useGrokAuthStatus(appId === "grok");
+
   // Hermes: 读取当前 model.provider，用于判断哪个供应商是"当前激活"（高亮）
   const { data: hermesModelConfig } = useHermesModelConfig(appId === "hermes");
   const hermesCurrentProviderId = hermesModelConfig?.provider;
@@ -127,9 +132,12 @@ export function ProviderList({
       if (appId === "hermes") {
         return hermesLiveIds?.includes(providerId) ?? false;
       }
+      if (appId === "grok") {
+        return grokLiveIds?.includes(providerId) ?? false;
+      }
       return true; // 其他应用始终返回 true
     },
-    [appId, opencodeLiveIds, openclawLiveIds, hermesLiveIds],
+    [appId, opencodeLiveIds, openclawLiveIds, hermesLiveIds, grokLiveIds],
   );
 
   // OpenClaw: query default model to determine which provider is default
@@ -220,6 +228,10 @@ export function ProviderList({
       }
       if (appId === "hermes") {
         const count = await providersApi.importHermesFromLive();
+        return count > 0;
+      }
+      if (appId === "grok") {
+        const count = await providersApi.importGrokFromLive();
         return count > 0;
       }
       if (appId === "claude-desktop") {
@@ -345,6 +357,21 @@ export function ProviderList({
     return messages;
   }, [appId, claudeDesktopStatus, t]);
 
+  const grokAuthBanner =
+    appId === "grok" ? (
+      <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+        {grokAuthStatus?.loggedIn
+          ? `${t("grok.auth.loggedIn", { defaultValue: "已登录" })}${
+              grokAuthStatus.email ? ` · ${grokAuthStatus.email}` : ""
+            }${
+              grokAuthStatus.expired
+                ? ` · ${t("grok.auth.expired", { defaultValue: "登录已过期" })}`
+                : ""
+            }`
+          : t("grok.auth.notLoggedIn", { defaultValue: "未登录" })}
+      </div>
+    ) : null;
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -360,11 +387,14 @@ export function ProviderList({
 
   if (sortedProviders.length === 0) {
     return (
-      <ProviderEmptyState
-        appId={appId}
-        onCreate={onCreate}
-        onImport={() => importMutation.mutate()}
-      />
+      <div>
+        {grokAuthBanner}
+        <ProviderEmptyState
+          appId={appId}
+          onCreate={onCreate}
+          onImport={() => importMutation.mutate()}
+        />
+      </div>
     );
   }
 
@@ -444,6 +474,7 @@ export function ProviderList({
 
   return (
     <div className="mt-4 space-y-4">
+      {grokAuthBanner}
       {claudeDesktopStatusMessages.length > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           <div className="flex items-center gap-2 font-medium">

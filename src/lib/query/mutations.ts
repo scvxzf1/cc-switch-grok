@@ -9,6 +9,7 @@ import { extractErrorMessage } from "@/utils/errorUtils";
 import { generateUUID } from "@/utils/uuid";
 import { openclawKeys } from "@/hooks/useOpenClaw";
 import { invalidateHermesProviderCaches } from "@/hooks/useHermes";
+import { invalidateGrokProviderCaches } from "@/hooks/useGrok";
 import { usageKeys } from "@/lib/query/usage";
 
 export const useAddProviderMutation = (appId: AppId) => {
@@ -97,6 +98,10 @@ export const useAddProviderMutation = (appId: AppId) => {
         await invalidateHermesProviderCaches(queryClient);
       }
 
+      if (appId === "grok") {
+        await invalidateGrokProviderCaches(queryClient);
+      }
+
       try {
         await providersApi.updateTrayMenu();
       } catch (trayError) {
@@ -160,6 +165,10 @@ export const useUpdateProviderMutation = (appId: AppId) => {
       if (appId === "hermes") {
         await invalidateHermesProviderCaches(queryClient);
       }
+
+      if (appId === "grok") {
+        await invalidateGrokProviderCaches(queryClient);
+      }
       toast.success(
         t("notifications.updateSuccess", {
           defaultValue: "供应商更新成功",
@@ -215,6 +224,10 @@ export const useDeleteProviderMutation = (appId: AppId) => {
 
       if (appId === "hermes") {
         await invalidateHermesProviderCaches(queryClient);
+      }
+
+      if (appId === "grok") {
+        await invalidateGrokProviderCaches(queryClient);
       }
 
       try {
@@ -289,6 +302,10 @@ export const useSwitchProviderMutation = (appId: AppId) => {
       }
       if (appId === "hermes") {
         await invalidateHermesProviderCaches(queryClient);
+      }
+
+      if (appId === "grok") {
+        await invalidateGrokProviderCaches(queryClient);
       }
 
       try {

@@ -3024,6 +3024,12 @@
       "providerKey": "供应商标识",
       "providerKeyInvalid": "供应商标识只能包含小写字母、数字和连字符",
       "providerKeyDuplicate": "该供应商标识已存在"
+    },
+    "auth": {
+      "loggedIn": "已登录",
+      "notLoggedIn": "未登录",
+      "expired": "登录已过期",
+      "email": "账号"
     }
   }
 }

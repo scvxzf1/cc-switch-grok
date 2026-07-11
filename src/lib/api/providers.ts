@@ -196,6 +196,18 @@ export const providersApi = {
   async importHermesFromLive(): Promise<number> {
     return await invoke("import_hermes_providers_from_live");
   },
+
+  /**
+   * 从 Grok live 配置导入供应商到数据库
+   * Grok 特有功能：累加模式，用户可能已在 config.toml 的 [model.*] 中配置供应商
+   */
+  async importGrokFromLive(): Promise<number> {
+    return await invoke("import_grok_providers_from_live");
+  },
+
+  async getGrokLiveProviderIds(): Promise<string[]> {
+    return await invoke("get_grok_live_provider_ids");
+  },
 };
 
 // ============================================================================

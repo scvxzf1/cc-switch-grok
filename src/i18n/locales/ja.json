@@ -3024,6 +3024,12 @@
       "providerKey": "プロバイダーキー",
       "providerKeyInvalid": "プロバイダーキーは小文字・数字・ハイフンのみ使用できます",
       "providerKeyDuplicate": "このプロバイダーキーは既に存在します"
+    },
+    "auth": {
+      "loggedIn": "ログイン済み",
+      "notLoggedIn": "未ログイン",
+      "expired": "ログイン期限切れ",
+      "email": "アカウント"
     }
   }
 }
