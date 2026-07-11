@@ -295,6 +295,8 @@ fn extract_context_window(settings: &Value) -> Option<i64> {
         })
 }
 
+/// Resolve the Grok model table id / `[models].default` value.
+/// Custom providers never use the upstream `settings.model` string as the table id.
 fn default_model_id_from_settings(provider_id: &str, settings: &Value) -> String {
     if settings
         .get("kind")
@@ -326,15 +328,8 @@ fn default_model_id_from_settings(provider_id: &str, settings: &Value) -> String
         return id.to_string();
     }
 
-    if let Some(model) = settings
-        .get("model")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        return model.to_string();
-    }
-
+    // Direct custom tables are keyed by provider id (or mapping id above).
+    // Upstream model names stay in the table's `model` field only.
     provider_id.trim().to_string()
 }
 
@@ -375,7 +370,11 @@ fn apply_model_settings_to_table(table: &mut Table, settings: &Value) {
     if let Some(description) = settings.get("description").and_then(|v| v.as_str()) {
         set_table_string(table, "description", description);
     }
-    set_table_optional_number(table, "context_window", extract_context_window(settings));
+    // Only touch context_window when the caller actually provided a value
+    // (or a mapping default row carries one). Partial updates must not wipe it.
+    if let Some(window) = extract_context_window(settings) {
+        set_table_optional_number(table, "context_window", Some(window));
+    }
 
     // Optional numeric sampling fields if present
     for (src, dest) in [
@@ -558,7 +557,7 @@ pub fn apply_switch_defaults(
                 obj.insert("model".into(), Value::String(default_id.clone()));
             }
         }
-        upsert_model_into_doc(&mut doc, provider_id, &model_settings)?;
+        upsert_model_into_doc(&mut doc, &default_id, &model_settings)?;
     }
 
     set_default_model_into_doc(&mut doc, &default_id)?;
@@ -881,6 +880,37 @@ compact_mode = true
             assert!(written.contains("default = \"openrouter\""), "got:\n{written}");
             assert!(written.contains("compact_mode = true"), "got:\n{written}");
 
+            // custom direct without modelMappings: default + table share provider_id
+            apply_switch_defaults(
+                "proxy-a",
+                &serde_json::json!({
+                    "kind": "custom",
+                    "model": "anthropic/claude-sonnet",
+                    "base_url": "https://proxy.example/v1",
+                    "api_key": "sk-proxy",
+                    "api_backend": "chat_completions",
+                    "useLocalRoute": false
+                }),
+            )
+            .unwrap();
+            let written = fs::read_to_string(&config_path).unwrap();
+            assert!(
+                written.contains("[model.proxy-a]"),
+                "expected table keyed by provider id, got:\n{written}"
+            );
+            assert!(
+                written.contains("default = \"proxy-a\""),
+                "default must match table id, not upstream model name, got:\n{written}"
+            );
+            assert!(
+                written.contains("model = \"anthropic/claude-sonnet\""),
+                "upstream model stays in table field, got:\n{written}"
+            );
+            assert!(
+                !written.contains("default = \"anthropic/claude-sonnet\""),
+                "must not use upstream model as default id, got:\n{written}"
+            );
+
             // local route only sets default, no forced proxy rewrite here
             apply_switch_defaults(
                 "route-proxy",
@@ -943,6 +973,46 @@ model = "b"
             assert!(written.contains("[model.keep]"), "got:\n{written}");
             assert!(!written.contains("[model.drop]"), "got:\n{written}");
             assert!(written.contains("[ui]") && written.contains("yolo = true"), "got:\n{written}");
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn set_model_partial_update_preserves_context_window() {
+        with_test_home(|| {
+            reset_grok_override();
+            let config_path = get_grok_config_path();
+            fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+            fs::write(
+                &config_path,
+                r#"[model.keep]
+model = "a"
+context_window = 64000
+base_url = "https://old.example/v1"
+"#,
+            )
+            .unwrap();
+
+            set_model(
+                "keep",
+                serde_json::json!({
+                    "model": "b",
+                    "base_url": "https://new.example/v1",
+                    "api_key": "sk-new"
+                }),
+            )
+            .unwrap();
+
+            let written = fs::read_to_string(&config_path).unwrap();
+            assert!(
+                written.contains("context_window = 64000"),
+                "partial update must keep existing context_window, got:\n{written}"
+            );
+            assert!(written.contains("model = \"b\""), "got:\n{written}");
+            assert!(
+                written.contains("https://new.example/v1"),
+                "got:\n{written}"
+            );
         });
     }
 
