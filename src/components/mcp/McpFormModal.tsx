@@ -607,6 +607,22 @@ const McpFormModal: React.FC<McpFormModalProps> = ({
                     {t("mcp.unifiedPanel.apps.hermes")}
                   </label>
                 </div>
+
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="enable-grok"
+                    checked={enabledApps.grok}
+                    onCheckedChange={(checked: boolean) =>
+                      setEnabledApps({ ...enabledApps, grok: checked })
+                    }
+                  />
+                  <label
+                    htmlFor="enable-grok"
+                    className="text-sm text-foreground cursor-pointer select-none"
+                  >
+                    {t("mcp.unifiedPanel.apps.grok")}
+                  </label>
+                </div>
               </div>
             </div>
 

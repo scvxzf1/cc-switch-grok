@@ -17,6 +17,8 @@ pub struct McpApps {
     pub opencode: bool,
     #[serde(default)]
     pub hermes: bool,
+    #[serde(default)]
+    pub grok: bool,
 }
 
 impl McpApps {
@@ -29,7 +31,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => false, // OpenClaw doesn't support MCP
             AppType::Hermes => self.hermes,
-            AppType::Grok => false, // Grok phase-1: no MCP
+            AppType::Grok => self.grok,
             AppType::ClaudeDesktop => false,
         }
     }
@@ -43,7 +45,7 @@ impl McpApps {
             AppType::OpenCode => self.opencode = enabled,
             AppType::OpenClaw => {} // OpenClaw doesn't support MCP, ignore
             AppType::Hermes => self.hermes = enabled,
-            AppType::Grok => {} // Grok phase-1: no MCP
+            AppType::Grok => self.grok = enabled,
             AppType::ClaudeDesktop => {} // Claude Desktop 3P provider config doesn't support MCP here
         }
     }
@@ -66,12 +68,15 @@ impl McpApps {
         if self.hermes {
             apps.push(AppType::Hermes);
         }
+        if self.grok {
+            apps.push(AppType::Grok);
+        }
         apps
     }
 
     /// 检查是否所有应用都未启用
     pub fn is_empty(&self) -> bool {
-        !self.claude && !self.codex && !self.gemini && !self.opencode && !self.hermes
+        !self.claude && !self.codex && !self.gemini && !self.opencode && !self.hermes && !self.grok
     }
 }
 
@@ -289,7 +294,7 @@ pub struct McpRoot {
     /// Hermes MCP 配置（实际使用 config.yaml）
     #[serde(default, skip_serializing_if = "McpConfig::is_empty")]
     pub hermes: McpConfig,
-    /// Grok MCP placeholder (phase-1 disabled; kept separate to avoid Hermes pollution)
+    /// Grok MCP storage (isolated from Hermes; projected to ~/.grok/config.toml)
     #[serde(default, skip_serializing_if = "McpConfig::is_empty")]
     pub grok: McpConfig,
 }
@@ -687,7 +692,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &self.mcp.opencode,
             AppType::OpenClaw => &self.mcp.openclaw,
             AppType::Hermes => &self.mcp.hermes,
-            AppType::Grok => &self.mcp.grok, // phase-1: MCP disabled, isolated storage
+            AppType::Grok => &self.mcp.grok,
         }
     }
 
@@ -701,7 +706,7 @@ impl MultiAppConfig {
             AppType::OpenCode => &mut self.mcp.opencode,
             AppType::OpenClaw => &mut self.mcp.openclaw,
             AppType::Hermes => &mut self.mcp.hermes,
-            AppType::Grok => &mut self.mcp.grok, // phase-1: MCP disabled, isolated storage
+            AppType::Grok => &mut self.mcp.grok,
         }
     }
 

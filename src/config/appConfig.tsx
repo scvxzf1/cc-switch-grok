@@ -43,6 +43,7 @@ export const MCP_APP_IDS: AppId[] = [
   "gemini",
   "opencode",
   "hermes",
+  "grok",
 ];
 
 export const APP_ICON_MAP: Record<AppId, AppConfig> = {

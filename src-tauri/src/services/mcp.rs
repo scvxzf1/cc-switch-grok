@@ -43,6 +43,9 @@ impl McpService {
         if prev_apps.hermes && !server.apps.hermes {
             Self::remove_server_from_app(state, &server.id, &AppType::Hermes)?;
         }
+        if prev_apps.grok && !server.apps.grok {
+            Self::remove_server_from_app(state, &server.id, &AppType::Grok)?;
+        }
 
         // 同步到各个启用的应用
         Self::sync_server_to_apps(state, &server)?;
@@ -138,7 +141,7 @@ impl McpService {
                 mcp::sync_single_server_to_hermes(&Default::default(), &server.id, &server.server)?;
             }
             AppType::Grok => {
-                log::debug!("Grok phase-1 does not support MCP sync, skipping");
+                mcp::sync_single_server_to_grok(&Default::default(), &server.id, &server.server)?;
             }
         }
         Ok(())
@@ -176,7 +179,7 @@ impl McpService {
                 mcp::remove_server_from_hermes(id)?;
             }
             AppType::Grok => {
-                log::debug!("Grok phase-1 does not support MCP remove, skipping");
+                mcp::remove_server_from_grok(id)?;
             }
         }
         Ok(())
@@ -222,7 +225,7 @@ impl McpService {
         servers: &IndexMap<String, McpServer>,
         app: &AppType,
     ) -> Result<(), AppError> {
-        if matches!(app, AppType::OpenClaw | AppType::ClaudeDesktop | AppType::Grok) {
+        if matches!(app, AppType::OpenClaw | AppType::ClaudeDesktop) {
             return Ok(());
         }
 
@@ -481,16 +484,45 @@ impl McpService {
     /// 全部跑完后若有失败，聚合成一个错误上报——历史实现逐应用
     /// `unwrap_or(0)` 吞错，坏文件只会表现为"导入成功 0 个"，用户
     /// 无从得知哪个应用出了问题。
+    /// 从 Grok 导入 MCP（统一结构）
+    pub fn import_from_grok(state: &AppState) -> Result<usize, AppError> {
+        let mut temp_config = crate::app_config::MultiAppConfig::default();
+        let count = crate::mcp::import_from_grok(&mut temp_config)?;
+        let mut new_count = 0;
+
+        if count > 0 {
+            if let Some(servers) = &temp_config.mcp.servers {
+                let mut existing = state.db.get_all_mcp_servers()?;
+                for server in servers.values() {
+                    let to_save = if let Some(existing_server) = existing.get(&server.id) {
+                        let mut merged = existing_server.clone();
+                        merged.apps.grok = true;
+                        merged
+                    } else {
+                        new_count += 1;
+                        server.clone()
+                    };
+                    state.db.save_mcp_server(&to_save)?;
+                    existing.insert(to_save.id.clone(), to_save.clone());
+                }
+            }
+        }
+
+        Ok(new_count)
+    }
+
+
     pub fn import_from_all_apps(state: &AppState) -> Result<usize, AppError> {
         let mut total = 0;
         let mut failures: Vec<String> = Vec::new();
 
-        let results: [(&str, Result<usize, AppError>); 5] = [
+        let results: [(&str, Result<usize, AppError>); 6] = [
             ("claude", Self::import_from_claude(state)),
             ("codex", Self::import_from_codex(state)),
             ("gemini", Self::import_from_gemini(state)),
             ("opencode", Self::import_from_opencode(state)),
             ("hermes", Self::import_from_hermes(state)),
+            ("grok", Self::import_from_grok(state)),
         ];
         for (app, result) in results {
             match result {
