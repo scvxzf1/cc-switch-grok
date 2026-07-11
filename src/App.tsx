@@ -776,7 +776,9 @@ function App() {
         provider.id,
         existingKeys,
       );
-      duplicatedProvider.addToLive = false;
+      // OpenCode/OpenClaw/Hermes: keep DB-only on duplicate; user can re-add.
+      // Grok: always register into ~/.grok/config.toml so /model sees the copy.
+      duplicatedProvider.addToLive = activeApp === "grok";
     }
 
     if (provider.sortIndex !== undefined) {

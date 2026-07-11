@@ -928,7 +928,17 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             log::debug!("Hermes provider '{}' written to live config", provider.id);
         }
         AppType::Grok => {
-            crate::grok_config::set_model(&provider.id, provider.settings_config.clone())?;
+            // Prefer the CC Switch card name so duplicates are distinguishable in /model.
+            let mut settings = provider.settings_config.clone();
+            if let Some(obj) = settings.as_object_mut() {
+                if !provider.name.trim().is_empty() {
+                    obj.insert(
+                        "name".into(),
+                        serde_json::Value::String(provider.name.trim().to_string()),
+                    );
+                }
+            }
+            crate::grok_config::set_model(&provider.id, settings)?;
             log::debug!("Grok provider '{}' written to live config", provider.id);
         }
     }
