@@ -771,6 +771,9 @@
     "browsePlaceholderOpencode": "例如：/home/<您的帳號>/.config/opencode",
     "browsePlaceholderOpenclaw": "例如：/home/<您的帳號>/.openclaw",
     "browsePlaceholderHermes": "例如：/home/<您的帳號>/.hermes",
+    "grokConfigDir": "Grok 設定目錄",
+    "grokConfigDirDescription": "覆寫 Grok 設定目錄 (config.toml)。",
+    "browsePlaceholderGrok": "例如：/home/<您的帳號>/.grok",
     "browseDirectory": "瀏覽目錄",
     "resetDefault": "還原預設目錄（需儲存後生效）",
     "checkForUpdates": "檢查更新",
@@ -851,7 +854,8 @@
     "gemini": "Gemini",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "grok": "Grok"
   },
   "sessionManager": {
     "title": "工作階段管理",

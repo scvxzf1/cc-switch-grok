@@ -771,6 +771,9 @@
     "browsePlaceholderOpencode": "例: /home/<your-username>/.config/opencode",
     "browsePlaceholderOpenclaw": "例: /home/<your-username>/.openclaw",
     "browsePlaceholderHermes": "例: /home/<your-username>/.hermes",
+    "grokConfigDir": "Grok 設定ディレクトリ",
+    "grokConfigDirDescription": "Grok の設定ディレクトリ（config.toml）を上書きします。",
+    "browsePlaceholderGrok": "例: /home/<your-username>/.grok",
     "browseDirectory": "ディレクトリを選択",
     "resetDefault": "デフォルトに戻す（保存後に反映）",
     "checkForUpdates": "アップデートを確認",
@@ -880,7 +883,8 @@
     "gemini": "Gemini",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "grok": "Grok"
   },
   "sessionManager": {
     "title": "セッション管理",
